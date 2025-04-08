@@ -25,7 +25,7 @@ type contributorProfileFrontmatter struct {
 	DisplayName            string  `yaml:"display_name"`
 	Bio                    string  `yaml:"bio"`
 	GithubUsername         string  `yaml:"github"`
-	AvatarUrl              *string `yaml:"avatar"`
+	AvatarUrl              *string `yaml:"avatar"` // Script assumes that if value is nil, the Registry site build step will backfill the value with the user's GitHub avatar URL
 	LinkedinURL            *string `yaml:"linkedin"`
 	WebsiteURL             *string `yaml:"website"`
 	SupportEmail           *string `yaml:"support_email"`
@@ -510,13 +510,12 @@ func validateRelativeUrls(
 		if con.AvatarUrl == nil {
 			continue
 		}
-		isRelativeUrl := strings.HasPrefix(*con.AvatarUrl, ".") ||
-			strings.HasPrefix(*con.AvatarUrl, "/")
-		if !isRelativeUrl {
+		if isRelativeUrl := strings.HasPrefix(*con.AvatarUrl, ".") ||
+			strings.HasPrefix(*con.AvatarUrl, "/"); !isRelativeUrl {
 			continue
 		}
 
-		fmt.Println(con.GithubUsername, con.AvatarUrl)
+		fmt.Println(con.GithubUsername, con.FilePath, con.AvatarUrl)
 	}
 
 	if len(problems) == 0 {
