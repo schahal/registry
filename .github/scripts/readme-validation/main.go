@@ -15,7 +15,7 @@ import (
 	"github.com/ghodss/yaml"
 )
 
-const rootRegistryPath = "./registry"
+const rootRegistryPath = "../../../registry"
 
 type directoryReadme struct {
 	FilePath string
@@ -70,7 +70,7 @@ type workflowPhaseError struct {
 }
 
 func (wpe workflowPhaseError) Error() string {
-	msg := fmt.Sprintf("Error during phase %q of README validation:", wpe.Phase)
+	msg := fmt.Sprintf("Error during %q phase of README validation:", wpe.Phase)
 	for _, e := range wpe.Errors {
 		msg += fmt.Sprintf("\n- %v", e)
 	}
@@ -456,59 +456,75 @@ func parseContributorFiles(input []directoryReadme) (
 	return structured, nil
 }
 
-func backfillAvatarUrls(contributors map[string]contributorProfile) error {
+// backfillAvatarUrls takes a map of contributor information, each keyed by
+// GitHub username, and tries to mutate each entry to fill in its missing avatar
+// URL. The first integer indicates the number of avatars that needed to be
+// backfilled, while the second indicates the number that could be backfilled
+// without any errors.
+//
+// The function will collect all request errors, rather than return the first
+// one found.
+func backfillAvatarUrls(contributors map[string]contributorProfile) (int, int, error) {
 	if contributors == nil {
-		return errors.New("provided map is nil")
+		return 0, 0, errors.New("provided map is nil")
 	}
 
 	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
 	errors := []error{}
-	errorsMutex := sync.Mutex{}
+	successfulBackfills := 0
 
 	// Todo: Add actual fetching logic once everything else has been verified
 	requestAvatarUrl := func(string) (string, error) {
 		return "", nil
 	}
 
-	for ghUsername, conCopy := range contributors {
-		if conCopy.AvatarUrl != "" {
+	avatarsThatNeedBackfill := 0
+	for ghUsername, con := range contributors {
+		if con.AvatarUrl != "" {
 			continue
 		}
 
+		avatarsThatNeedBackfill++
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			url, err := requestAvatarUrl(ghUsername)
+			mtx.Lock()
+			defer mtx.Unlock()
+
 			if err != nil {
-				errorsMutex.Lock()
 				errors = append(errors, err)
-				errorsMutex.Unlock()
 				return
 			}
-			conCopy.AvatarUrl = url
-			contributors[ghUsername] = conCopy
+
+			successfulBackfills++
+			con.AvatarUrl = url
+			contributors[ghUsername] = con
 		}()
 	}
 
 	wg.Wait()
 	if len(errors) == 0 {
-		return nil
+		return avatarsThatNeedBackfill, successfulBackfills, nil
 	}
 
 	slices.SortFunc(errors, func(e1 error, e2 error) int {
 		return strings.Compare(e1.Error(), e2.Error())
 	})
-	return workflowPhaseError{
+	return avatarsThatNeedBackfill, successfulBackfills, workflowPhaseError{
 		Phase:  "Avatar Backfill",
 		Errors: errors,
 	}
 }
 
 func main() {
+	log.Println("Starting README validation")
 	dirEntries, err := os.ReadDir(rootRegistryPath)
 	if err != nil {
 		log.Panic(err)
 	}
+	log.Printf("Identified %d top-level directory entries\n", len(dirEntries))
 
 	allReadmeFiles := []directoryReadme{}
 	fsErrors := workflowPhaseError{
@@ -543,13 +559,28 @@ func main() {
 		log.Panic(fsErrors)
 	}
 
+	log.Printf("Processing %d README files\n", len(allReadmeFiles))
 	contributors, err := parseContributorFiles(allReadmeFiles)
 	if err != nil {
 		log.Panic(err)
 	}
-	err = backfillAvatarUrls(contributors)
+	log.Printf(
+		"Processed %d README files as valid contributor profiles",
+		len(contributors),
+	)
+
+	backfillsNeeded, successCount, err := backfillAvatarUrls(contributors)
 	if err != nil {
 		log.Panic(err)
+	}
+	if backfillsNeeded == 0 {
+		log.Println("No GitHub avatar backfills needed")
+	} else {
+		log.Printf(
+			"Backfilled %d/%d missing GitHub avatars",
+			backfillsNeeded,
+			successCount,
+		)
 	}
 
 	log.Printf(
