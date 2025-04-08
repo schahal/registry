@@ -10,7 +10,6 @@ import (
 	"path"
 	"slices"
 	"strings"
-	"sync"
 
 	"gopkg.in/yaml.v3"
 )
@@ -66,7 +65,7 @@ type contributorProfile struct {
 	GithubUsername          string
 	DisplayName             string
 	Bio                     string
-	AvatarUrl               string
+	AvatarUrl               *string
 	WebsiteURL              *string
 	LinkedinURL             *string
 	SupportEmail            *string
@@ -329,8 +328,9 @@ func remapContributorProfile(
 	frontmatter contributorFrontmatterWithFilepath,
 	employeeGitHubNames []string,
 ) contributorProfile {
-	// Function assumes that fields are previously validated and are safe to
-	// copy over verbatim when appropriate
+	// Function assumes that (1) fields are previously validated and are safe to
+	// copy over verbatim when appropriate, and (2) any missing avatar URLs will
+	// be backfilled during the main Registry site build step
 	remapped := contributorProfile{
 		DisplayName:    frontmatter.DisplayName,
 		GithubUsername: frontmatter.GithubUsername,
@@ -338,11 +338,9 @@ func remapContributorProfile(
 		LinkedinURL:    frontmatter.LinkedinURL,
 		SupportEmail:   frontmatter.SupportEmail,
 		WebsiteURL:     frontmatter.WebsiteURL,
+		AvatarUrl:      frontmatter.AvatarUrl,
 	}
 
-	if frontmatter.AvatarUrl != nil {
-		remapped.AvatarUrl = *frontmatter.AvatarUrl
-	}
 	if frontmatter.ContributorStatus != nil {
 		switch *frontmatter.ContributorStatus {
 		case "partner":
@@ -472,68 +470,6 @@ func parseContributorFiles(readmeEntries []directoryReadme) (
 	return structured, nil
 }
 
-// backfillAvatarUrls takes a map of contributor information, each keyed by
-// GitHub username, and tries to mutate each entry to fill in its missing avatar
-// URL. The first integer indicates the number of avatars that needed to be
-// backfilled, while the second indicates the number that could be backfilled
-// without any errors.
-//
-// The function will collect all request errors, rather than return the first
-// one found.
-func backfillAvatarUrls(contributors map[string]contributorProfile) (int, int, error) {
-	if contributors == nil {
-		return 0, 0, errors.New("provided map is nil")
-	}
-
-	wg := sync.WaitGroup{}
-	mtx := sync.Mutex{}
-	errors := []error{}
-	successfulBackfills := 0
-
-	// Todo: Add actual fetching logic once everything else has been verified
-	requestAvatarUrl := func(string) (string, error) {
-		return "", nil
-	}
-
-	avatarsThatNeedBackfill := 0
-	for ghUsername, con := range contributors {
-		if con.AvatarUrl != "" {
-			continue
-		}
-
-		avatarsThatNeedBackfill++
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			url, err := requestAvatarUrl(ghUsername)
-			mtx.Lock()
-			defer mtx.Unlock()
-
-			if err != nil {
-				errors = append(errors, err)
-				return
-			}
-
-			successfulBackfills++
-			con.AvatarUrl = url + "Not implemented yet"
-			contributors[ghUsername] = con
-		}()
-	}
-
-	wg.Wait()
-	if len(errors) == 0 {
-		return avatarsThatNeedBackfill, successfulBackfills, nil
-	}
-
-	slices.SortFunc(errors, func(e1 error, e2 error) int {
-		return strings.Compare(e1.Error(), e2.Error())
-	})
-	return avatarsThatNeedBackfill, successfulBackfills, workflowPhaseError{
-		Phase:  "Avatar Backfill",
-		Errors: errors,
-	}
-}
-
 func main() {
 	log.Println("Starting README validation")
 	dirEntries, err := os.ReadDir(rootRegistryPath)
@@ -584,20 +520,6 @@ func main() {
 		"Processed %d README files as valid contributor profiles",
 		len(contributors),
 	)
-
-	backfillsNeeded, successCount, err := backfillAvatarUrls(contributors)
-	if err != nil {
-		log.Panic(err)
-	}
-	if backfillsNeeded == 0 {
-		log.Println("No GitHub avatar backfills needed")
-	} else {
-		log.Printf(
-			"Backfilled %d/%d missing GitHub avatars",
-			backfillsNeeded,
-			successCount,
-		)
-	}
 
 	log.Printf(
 		"Processed all READMEs in the %q directory\n",
