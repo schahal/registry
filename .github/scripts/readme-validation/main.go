@@ -50,6 +50,17 @@ const (
 	profileStatusOfficial
 )
 
+func (status contributorProfileStatus) String() string {
+	switch status {
+	case profileStatusOfficial:
+		return "official"
+	case profileStatusPartner:
+		return "partner"
+	default:
+		return "community"
+	}
+}
+
 type contributorProfile struct {
 	EmployeeGithubUsernames []string
 	GithubUsername          string
@@ -186,7 +197,7 @@ func validateContributorYaml(yml contributorFrontmatterWithFilepath) []error {
 			errors = append(
 				errors,
 				fmt.Errorf(
-					"%q (%q) is missing display name",
+					"GitHub user %q (%q) is missing display name",
 					yml.GithubUsername,
 					yml.FilePath,
 				),
@@ -326,6 +337,7 @@ func remapContributorProfile(
 		Bio:            frontmatter.Bio,
 		LinkedinURL:    frontmatter.LinkedinURL,
 		SupportEmail:   frontmatter.SupportEmail,
+		WebsiteURL:     frontmatter.WebsiteURL,
 	}
 
 	if frontmatter.AvatarUrl != nil {
@@ -503,7 +515,7 @@ func backfillAvatarUrls(contributors map[string]contributorProfile) (int, int, e
 			}
 
 			successfulBackfills++
-			con.AvatarUrl = url
+			con.AvatarUrl = url + "Not implemented yet"
 			contributors[ghUsername] = con
 		}()
 	}
