@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ghodss/yaml"
+	"gopkg.in/yaml.v3"
 )
 
 const rootRegistryPath = "../../../registry"
@@ -23,18 +23,18 @@ type directoryReadme struct {
 }
 
 type rawContributorProfileFrontmatter struct {
-	DisplayName       string  `yaml:"display_name"`
-	Bio               string  `yaml:"bio"`
-	GithubUsername    string  `yaml:"github"`
-	AvatarUrl         *string `yaml:"avatar"`
-	LinkedinURL       *string `yaml:"linkedin"`
-	WebsiteURL        *string `yaml:"website"`
-	SupportEmail      *string `yaml:"support_email"`
-	CompanyGithub     *string `yaml:"company_github"`
-	ContributorStatus *string `yaml:"status"`
+	DisplayName            string  `yaml:"display_name"`
+	Bio                    string  `yaml:"bio"`
+	GithubUsername         string  `yaml:"github"`
+	AvatarUrl              *string `yaml:"avatar"`
+	LinkedinURL            *string `yaml:"linkedin"`
+	WebsiteURL             *string `yaml:"website"`
+	SupportEmail           *string `yaml:"support_email"`
+	EmployerGithubUsername *string `yaml:"employer_github"`
+	ContributorStatus      *string `yaml:"status"`
 }
 
-type trackableContributorFrontmatter struct {
+type contributorFrontmatterWithFilepath struct {
 	rawContributorProfileFrontmatter
 	FilePath string
 }
@@ -97,7 +97,7 @@ func extractFrontmatter(readmeText string) (string, error) {
 		}
 
 		if nextLine != fence {
-			fm += nextLine
+			fm += nextLine + "\n"
 			continue
 		}
 
@@ -113,7 +113,7 @@ func extractFrontmatter(readmeText string) (string, error) {
 	return fm, nil
 }
 
-func validateContributorYaml(yml trackableContributorFrontmatter) []error {
+func validateContributorYaml(yml contributorFrontmatterWithFilepath) []error {
 	// This function needs to aggregate a bunch of different errors, rather than
 	// stopping at the first one found, so using code blocks to section off
 	// logic for different fields
@@ -145,8 +145,8 @@ func validateContributorYaml(yml trackableContributorFrontmatter) []error {
 	}
 
 	// Company GitHub
-	if yml.CompanyGithub != nil {
-		if *yml.CompanyGithub == "" {
+	if yml.EmployerGithubUsername != nil {
+		if *yml.EmployerGithubUsername == "" {
 			errors = append(
 				errors,
 				fmt.Errorf(
@@ -156,19 +156,19 @@ func validateContributorYaml(yml trackableContributorFrontmatter) []error {
 			)
 		}
 
-		lower := strings.ToLower(*yml.CompanyGithub)
+		lower := strings.ToLower(*yml.EmployerGithubUsername)
 		if uriSafe := url.PathEscape(lower); uriSafe != lower {
 			errors = append(
 				errors,
 				fmt.Errorf(
 					"gitHub company username %q (%q) is not a valid URL path segment",
-					*yml.CompanyGithub,
+					*yml.EmployerGithubUsername,
 					yml.FilePath,
 				),
 			)
 		}
 
-		if *yml.CompanyGithub == yml.GithubUsername {
+		if *yml.EmployerGithubUsername == yml.GithubUsername {
 			errors = append(
 				errors,
 				fmt.Errorf(
@@ -315,7 +315,7 @@ website:
 }
 
 func remapContributorProfile(
-	frontmatter trackableContributorFrontmatter,
+	frontmatter contributorFrontmatterWithFilepath,
 	employeeGitHubNames []string,
 ) contributorProfile {
 	// Function assumes that fields are previously validated and are safe to
@@ -354,20 +354,20 @@ func remapContributorProfile(
 	return remapped
 }
 
-func parseContributorFiles(input []directoryReadme) (
+func parseContributorFiles(readmeEntries []directoryReadme) (
 	map[string]contributorProfile,
 	error,
 ) {
-	frontmatterByGithub := map[string]trackableContributorFrontmatter{}
+	frontmatterByGithub := map[string]contributorFrontmatterWithFilepath{}
 	yamlParsingErrors := workflowPhaseError{
 		Phase: "YAML parsing",
 	}
-	for _, dirReadme := range input {
-		fmText, err := extractFrontmatter(dirReadme.RawText)
+	for _, rm := range readmeEntries {
+		fmText, err := extractFrontmatter(rm.RawText)
 		if err != nil {
 			yamlParsingErrors.Errors = append(
 				yamlParsingErrors.Errors,
-				fmt.Errorf("failed to parse %q: %v", dirReadme.FilePath, err),
+				fmt.Errorf("failed to parse %q: %v", rm.FilePath, err),
 			)
 			continue
 		}
@@ -376,12 +376,13 @@ func parseContributorFiles(input []directoryReadme) (
 		if err := yaml.Unmarshal([]byte(fmText), &yml); err != nil {
 			yamlParsingErrors.Errors = append(
 				yamlParsingErrors.Errors,
-				fmt.Errorf("failed to parse %q: %v", dirReadme.FilePath, err),
+				fmt.Errorf("failed to parse %q: %v", rm.FilePath, err),
 			)
 			continue
 		}
-		trackable := trackableContributorFrontmatter{
-			FilePath:                         dirReadme.FilePath,
+
+		trackable := contributorFrontmatterWithFilepath{
+			FilePath:                         rm.FilePath,
 			rawContributorProfileFrontmatter: yml,
 		}
 
@@ -391,14 +392,17 @@ func parseContributorFiles(input []directoryReadme) (
 				fmt.Errorf(
 					"GitHub name conflict for %q for files %q and %q",
 					trackable.GithubUsername,
-					trackable.FilePath,
 					prev.FilePath,
+					trackable.FilePath,
 				),
 			)
 			continue
 		}
 
 		frontmatterByGithub[trackable.GithubUsername] = trackable
+	}
+	if len(yamlParsingErrors.Errors) != 0 {
+		return nil, yamlParsingErrors
 	}
 
 	employeeGithubGroups := map[string][]string{}
@@ -415,9 +419,9 @@ func parseContributorFiles(input []directoryReadme) (
 			continue
 		}
 
-		if yml.CompanyGithub != nil {
-			employeeGithubGroups[*yml.CompanyGithub] = append(
-				employeeGithubGroups[*yml.CompanyGithub],
+		if yml.EmployerGithubUsername != nil {
+			employeeGithubGroups[*yml.EmployerGithubUsername] = append(
+				employeeGithubGroups[*yml.EmployerGithubUsername],
 				yml.GithubUsername,
 			)
 		}
@@ -443,8 +447,8 @@ func parseContributorFiles(input []directoryReadme) (
 			contributorError.Errors,
 			fmt.Errorf(
 				"company %q does not exist in %q directory but is referenced by these profiles: [%s]",
-				rootRegistryPath,
 				companyName,
+				rootRegistryPath,
 				strings.Join(group, ", "),
 			),
 		)
