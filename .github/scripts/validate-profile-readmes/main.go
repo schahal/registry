@@ -124,27 +124,33 @@ func extractFrontmatter(readmeText string) (string, error) {
 }
 
 func validateContributorYaml(yml contributorFrontmatterWithFilepath) []error {
-	// This function needs to aggregate a bunch of different errors, rather than
-	// stopping at the first one found, so using code blocks to section off
+	// This function needs to aggregate a bunch of different problems, rather
+	// than stopping at the first one found, so using code blocks to section off
 	// logic for different fields
-	errors := []error{}
+	problems := []error{}
+
+	// Using a bunch of closures to group validations for each field and add
+	// support for ending validations for a group early. The alternatives were
+	// making a bunch of functions in the top-level that would only be used
+	// once, or using goto statements, which would've made refactoring fragile
 
 	// GitHub Username
-	{
+	func() {
 		if yml.GithubUsername == "" {
-			errors = append(
-				errors,
+			problems = append(
+				problems,
 				fmt.Errorf(
 					"missing GitHub username for %q",
 					yml.FilePath,
 				),
 			)
+			return
 		}
 
 		lower := strings.ToLower(yml.GithubUsername)
 		if uriSafe := url.PathEscape(lower); uriSafe != lower {
-			errors = append(
-				errors,
+			problems = append(
+				problems,
 				fmt.Errorf(
 					"gitHub username %q (%q) is not a valid URL path segment",
 					yml.GithubUsername,
@@ -152,24 +158,29 @@ func validateContributorYaml(yml contributorFrontmatterWithFilepath) []error {
 				),
 			)
 		}
-	}
+	}()
 
 	// Company GitHub
-	if yml.EmployerGithubUsername != nil {
+	func() {
+		if yml.EmployerGithubUsername == nil {
+			return
+		}
+
 		if *yml.EmployerGithubUsername == "" {
-			errors = append(
-				errors,
+			problems = append(
+				problems,
 				fmt.Errorf(
 					"company_github field is defined but has empty value for %q",
 					yml.FilePath,
 				),
 			)
+			return
 		}
 
 		lower := strings.ToLower(*yml.EmployerGithubUsername)
 		if uriSafe := url.PathEscape(lower); uriSafe != lower {
-			errors = append(
-				errors,
+			problems = append(
+				problems,
 				fmt.Errorf(
 					"gitHub company username %q (%q) is not a valid URL path segment",
 					*yml.EmployerGithubUsername,
@@ -179,8 +190,8 @@ func validateContributorYaml(yml contributorFrontmatterWithFilepath) []error {
 		}
 
 		if *yml.EmployerGithubUsername == yml.GithubUsername {
-			errors = append(
-				errors,
+			problems = append(
+				problems,
 				fmt.Errorf(
 					"cannot list own GitHub name (%q) as employer (%q)",
 					yml.GithubUsername,
@@ -188,13 +199,13 @@ func validateContributorYaml(yml contributorFrontmatterWithFilepath) []error {
 				),
 			)
 		}
-	}
+	}()
 
 	// Display name
-	{
+	func() {
 		if yml.DisplayName == "" {
-			errors = append(
-				errors,
+			problems = append(
+				problems,
 				fmt.Errorf(
 					"GitHub user %q (%q) is missing display name",
 					yml.GithubUsername,
@@ -202,13 +213,17 @@ func validateContributorYaml(yml contributorFrontmatterWithFilepath) []error {
 				),
 			)
 		}
-	}
+	}()
 
 	// LinkedIn URL
-	if yml.LinkedinURL != nil {
+	func() {
+		if yml.LinkedinURL == nil {
+			return
+		}
+
 		if _, err := url.ParseRequestURI(*yml.LinkedinURL); err != nil {
-			errors = append(
-				errors,
+			problems = append(
+				problems,
 				fmt.Errorf(
 					"linkedIn URL %q (%q) is not valid: %v",
 					*yml.LinkedinURL,
@@ -217,30 +232,34 @@ func validateContributorYaml(yml contributorFrontmatterWithFilepath) []error {
 				),
 			)
 		}
-	}
+	}()
 
 	// Email
-	if yml.SupportEmail != nil {
+	func() {
+		if yml.SupportEmail == nil {
+			return
+		}
+
 		// Can't 100% validate that this is correct without actually sending
 		// an email, and especially with some contributors being individual
 		// developers, we don't want to do that on every single run of the CI
 		// pipeline. Best we can do is verify the general structure
 		username, server, ok := strings.Cut(*yml.SupportEmail, "@")
 		if !ok {
-			errors = append(
-				errors,
+			problems = append(
+				problems,
 				fmt.Errorf(
 					"email address %q (%q) is missing @ symbol",
 					*yml.LinkedinURL,
 					yml.FilePath,
 				),
 			)
-			goto website
+			return
 		}
 
 		if username == "" {
-			errors = append(
-				errors,
+			problems = append(
+				problems,
 				fmt.Errorf(
 					"email address %q (%q) is missing username",
 					*yml.LinkedinURL,
@@ -251,20 +270,20 @@ func validateContributorYaml(yml contributorFrontmatterWithFilepath) []error {
 
 		domain, tld, ok := strings.Cut(server, ".")
 		if !ok {
-			errors = append(
-				errors,
+			problems = append(
+				problems,
 				fmt.Errorf(
 					"email address %q (%q) is missing period for server segment",
 					*yml.LinkedinURL,
 					yml.FilePath,
 				),
 			)
-			goto website
+			return
 		}
 
 		if domain == "" {
-			errors = append(
-				errors,
+			problems = append(
+				problems,
 				fmt.Errorf(
 					"email address %q (%q) is missing domain",
 					*yml.LinkedinURL,
@@ -274,8 +293,8 @@ func validateContributorYaml(yml contributorFrontmatterWithFilepath) []error {
 		}
 
 		if tld == "" {
-			errors = append(
-				errors,
+			problems = append(
+				problems,
 				fmt.Errorf(
 					"email address %q (%q) is missing top-level domain",
 					*yml.LinkedinURL,
@@ -283,14 +302,27 @@ func validateContributorYaml(yml contributorFrontmatterWithFilepath) []error {
 				),
 			)
 		}
-	}
+
+		if strings.Contains(*yml.AvatarUrl, "?") {
+			problems = append(
+				problems,
+				fmt.Errorf(
+					"email for %q is not allowed to contain search parameters",
+					yml.FilePath,
+				),
+			)
+		}
+	}()
 
 	// Website
-website:
-	if yml.WebsiteURL != nil {
+	func() {
+		if yml.WebsiteURL == nil {
+			return
+		}
+
 		if _, err := url.ParseRequestURI(*yml.WebsiteURL); err != nil {
-			errors = append(
-				errors,
+			problems = append(
+				problems,
 				fmt.Errorf(
 					"LinkedIn URL %q (%q) is not valid: %v",
 					*yml.WebsiteURL,
@@ -299,14 +331,18 @@ website:
 				),
 			)
 		}
-	}
+	}()
 
 	// Contributor status
-	if yml.ContributorStatus != nil {
+	func() {
+		if yml.ContributorStatus == nil {
+			return
+		}
+
 		validStatuses := []string{"official", "partner", "community"}
 		if !slices.Contains(validStatuses, *yml.ContributorStatus) {
-			errors = append(
-				errors,
+			problems = append(
+				problems,
 				fmt.Errorf(
 					"contributor status %q (%q) is not valid",
 					*yml.ContributorStatus,
@@ -314,14 +350,51 @@ website:
 				),
 			)
 		}
-	}
+	}()
 
-	// Avatar URL
-	if yml.AvatarUrl != nil {
+	// Avatar URL - can't validate the image actually leads to a valid resource
+	// in a pure function, but can at least catch obvious problems
+	func() {
+		if yml.AvatarUrl == nil {
+			return
+		}
 
-	}
+		if *yml.AvatarUrl == "" {
+			problems = append(
+				problems,
+				fmt.Errorf(
+					"avatar URL for %q must be omitted or non-empty string",
+					yml.FilePath,
+				),
+			)
+			return
+		}
 
-	return errors
+		// Have to use .Parse instead of .ParseRequestURI because this is the
+		// one field that's allowed to be a relative URL
+		if _, err := url.Parse(*yml.AvatarUrl); err != nil {
+			problems = append(
+				problems,
+				fmt.Errorf(
+					"error %q (%q) is not a valid relative or absolute URL",
+					*yml.AvatarUrl,
+					yml.FilePath,
+				),
+			)
+		}
+
+		if strings.Contains(*yml.AvatarUrl, "?") {
+			problems = append(
+				problems,
+				fmt.Errorf(
+					"avatar URL for %q is not allowed to contain search parameters",
+					yml.FilePath,
+				),
+			)
+		}
+	}()
+
+	return problems
 }
 
 func remapContributorProfile(
