@@ -14,7 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const rootRegistryPath = "../../../registry"
+const rootRegistryPath = "./registry"
 
 type directoryReadme struct {
 	FilePath string
