@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"sigs.k8s.io/yaml"
+	"github.com/ghodss/yaml"
 )
 
 const rootRegistryPath = "./registry"
@@ -306,6 +306,11 @@ website:
 		}
 	}
 
+	// Avatar URL
+	if yml.AvatarUrl != nil {
+
+	}
+
 	return errors
 }
 
@@ -338,7 +343,12 @@ func remapContributorProfile(
 	}
 	if employeeGitHubNames != nil {
 		remapped.EmployeeGithubUsernames = employeeGitHubNames[:]
-		slices.Sort(remapped.EmployeeGithubUsernames)
+		slices.SortFunc(
+			remapped.EmployeeGithubUsernames,
+			func(name1 string, name2 string) int {
+				return strings.Compare(name1, name2)
+			},
+		)
 	}
 
 	return remapped
@@ -447,18 +457,36 @@ func parseContributorFiles(input []directoryReadme) (
 }
 
 func backfillAvatarUrls(contributors map[string]contributorProfile) error {
-	wg := sync.WaitGroup{}
-	requestBuffer := make(chan struct{}, 10)
-	errors := []error{}
+	if contributors == nil {
+		return errors.New("provided map is nil")
+	}
 
-	for _, c := range contributors {
+	wg := sync.WaitGroup{}
+	errors := []error{}
+	errorsMutex := sync.Mutex{}
+
+	// Todo: Add actual fetching logic once everything else has been verified
+	requestAvatarUrl := func(string) (string, error) {
+		return "", nil
+	}
+
+	for ghUsername, conCopy := range contributors {
+		if conCopy.AvatarUrl != "" {
+			continue
+		}
+
 		wg.Add(1)
 		go func() {
-			requestBuffer <- struct{}{}
-			// Do request stuff
-
-			<-requestBuffer
-			wg.Done()
+			defer wg.Done()
+			url, err := requestAvatarUrl(ghUsername)
+			if err != nil {
+				errorsMutex.Lock()
+				errors = append(errors, err)
+				errorsMutex.Unlock()
+				return
+			}
+			conCopy.AvatarUrl = url
+			contributors[ghUsername] = conCopy
 		}()
 	}
 
@@ -481,12 +509,12 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
+
 	allReadmeFiles := []directoryReadme{}
 	fsErrors := workflowPhaseError{
 		Phase:  "FileSystem reading",
 		Errors: []error{},
 	}
-
 	for _, e := range dirEntries {
 		dirPath := path.Join(rootRegistryPath, e.Name())
 		if !e.IsDir() {
