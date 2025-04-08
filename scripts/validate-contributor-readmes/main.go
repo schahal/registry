@@ -359,6 +359,25 @@ func validateContributorYaml(yml contributorFrontmatterWithFilePath) []error {
 				),
 			)
 		}
+
+		supportedFileFormats := []string{".png", ".jpeg", ".jpg", ".gif", ".svg"}
+		matched := false
+		for _, ff := range supportedFileFormats {
+			matched = strings.HasSuffix(*yml.AvatarUrl, ff)
+			if matched {
+				break
+			}
+		}
+		if !matched {
+			problems = append(
+				problems,
+				fmt.Errorf(
+					"avatar URL for %q does not end in a supported file format: [%s]",
+					yml.FilePath,
+					strings.Join(supportedFileFormats, ", "),
+				),
+			)
+		}
 	}()
 
 	return problems
@@ -515,7 +534,19 @@ func validateRelativeUrls(
 			continue
 		}
 
-		fmt.Println(con.GithubUsername, con.FilePath, con.AvatarUrl)
+		absolutePath := strings.TrimSuffix(con.FilePath, "README.md") +
+			*con.AvatarUrl
+		_, err := os.ReadFile(absolutePath)
+		if err != nil {
+			problems = append(
+				problems,
+				fmt.Errorf(
+					"relative avatar path %q for %q does not point to image in file system",
+					*con.AvatarUrl,
+					con.FilePath,
+				),
+			)
+		}
 	}
 
 	if len(problems) == 0 {
