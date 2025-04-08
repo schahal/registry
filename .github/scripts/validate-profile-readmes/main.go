@@ -213,6 +213,7 @@ func validateContributorYaml(yml contributorFrontmatterWithFilepath) []error {
 				),
 			)
 		}
+
 	}()
 
 	// LinkedIn URL
@@ -303,7 +304,7 @@ func validateContributorYaml(yml contributorFrontmatterWithFilepath) []error {
 			)
 		}
 
-		if strings.Contains(*yml.AvatarUrl, "?") {
+		if strings.Contains(*yml.SupportEmail, "?") {
 			problems = append(
 				problems,
 				fmt.Errorf(
