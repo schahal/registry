@@ -38,41 +38,6 @@ type contributorFrontmatterWithFilepath struct {
 	FilePath string
 }
 
-type contributorProfileStatus int
-
-const (
-	// Community should always be the first value defined via iota; it should be
-	// treated as the zero value of the type in the event that a more specific
-	// status wasn't defined
-	profileStatusCommunity contributorProfileStatus = iota
-	profileStatusPartner
-	profileStatusOfficial
-)
-
-func (status contributorProfileStatus) String() string {
-	switch status {
-	case profileStatusOfficial:
-		return "official"
-	case profileStatusPartner:
-		return "partner"
-	default:
-		return "community"
-	}
-}
-
-type contributorProfile struct {
-	EmployeeGithubUsernames []string
-	GithubUsername          string
-	FilePath                string
-	DisplayName             string
-	Bio                     string
-	AvatarUrl               *string
-	WebsiteURL              *string
-	LinkedinURL             *string
-	SupportEmail            *string
-	Status                  contributorProfileStatus
-}
-
 var _ error = workflowPhaseError{}
 
 type workflowPhaseError struct {
@@ -399,57 +364,16 @@ func validateContributorYaml(yml contributorFrontmatterWithFilepath) []error {
 	return problems
 }
 
-func remapContributorProfile(
-	frontmatter contributorFrontmatterWithFilepath,
-	employeeGitHubNames []string,
-) contributorProfile {
-	// Function assumes that (1) fields are previously validated and are safe to
-	// copy over verbatim when appropriate, and (2) any missing avatar URLs will
-	// be backfilled during the main Registry site build step
-	remapped := contributorProfile{
-		FilePath:       frontmatter.FilePath,
-		DisplayName:    frontmatter.DisplayName,
-		GithubUsername: frontmatter.GithubUsername,
-		Bio:            frontmatter.Bio,
-		LinkedinURL:    frontmatter.LinkedinURL,
-		SupportEmail:   frontmatter.SupportEmail,
-		WebsiteURL:     frontmatter.WebsiteURL,
-		AvatarUrl:      frontmatter.AvatarUrl,
-	}
-
-	if frontmatter.ContributorStatus != nil {
-		switch *frontmatter.ContributorStatus {
-		case "partner":
-			remapped.Status = profileStatusPartner
-		case "official":
-			remapped.Status = profileStatusOfficial
-		default:
-			remapped.Status = profileStatusCommunity
-		}
-	}
-	if employeeGitHubNames != nil {
-		remapped.EmployeeGithubUsernames = employeeGitHubNames[:]
-		slices.SortFunc(
-			remapped.EmployeeGithubUsernames,
-			func(name1 string, name2 string) int {
-				return strings.Compare(name1, name2)
-			},
-		)
-	}
-
-	return remapped
-}
-
 func parseContributorFiles(readmeEntries []directoryReadme) (
-	map[string]contributorProfile,
+	map[string]contributorFrontmatterWithFilepath,
 	error,
 ) {
-	frontmatterByGithub := map[string]contributorFrontmatterWithFilepath{}
+	frontmatterByUsername := map[string]contributorFrontmatterWithFilepath{}
 	yamlParsingErrors := workflowPhaseError{
 		Phase: "YAML parsing",
 	}
 	for _, rm := range readmeEntries {
-		fmText, err := extractFrontmatter(rm.RawText)
+		fm, err := extractFrontmatter(rm.RawText)
 		if err != nil {
 			yamlParsingErrors.Errors = append(
 				yamlParsingErrors.Errors,
@@ -459,33 +383,32 @@ func parseContributorFiles(readmeEntries []directoryReadme) (
 		}
 
 		yml := rawContributorProfileFrontmatter{}
-		if err := yaml.Unmarshal([]byte(fmText), &yml); err != nil {
+		if err := yaml.Unmarshal([]byte(fm), &yml); err != nil {
 			yamlParsingErrors.Errors = append(
 				yamlParsingErrors.Errors,
 				fmt.Errorf("failed to parse %q: %v", rm.FilePath, err),
 			)
 			continue
 		}
-
-		trackable := contributorFrontmatterWithFilepath{
+		processed := contributorFrontmatterWithFilepath{
 			FilePath:                         rm.FilePath,
 			rawContributorProfileFrontmatter: yml,
 		}
 
-		if prev, conflict := frontmatterByGithub[trackable.GithubUsername]; conflict {
+		if prev, conflict := frontmatterByUsername[processed.GithubUsername]; conflict {
 			yamlParsingErrors.Errors = append(
 				yamlParsingErrors.Errors,
 				fmt.Errorf(
 					"GitHub name conflict for %q for files %q and %q",
-					trackable.GithubUsername,
+					processed.GithubUsername,
 					prev.FilePath,
-					trackable.FilePath,
+					processed.FilePath,
 				),
 			)
 			continue
 		}
 
-		frontmatterByGithub[trackable.GithubUsername] = trackable
+		frontmatterByUsername[processed.GithubUsername] = processed
 	}
 	if len(yamlParsingErrors.Errors) != 0 {
 		return nil, yamlParsingErrors
@@ -495,7 +418,7 @@ func parseContributorFiles(readmeEntries []directoryReadme) (
 	yamlValidationErrors := workflowPhaseError{
 		Phase: "Raw YAML Validation",
 	}
-	for _, yml := range frontmatterByGithub {
+	for _, yml := range frontmatterByUsername {
 		errors := validateContributorYaml(yml)
 		if len(errors) > 0 {
 			yamlValidationErrors.Errors = append(
@@ -512,25 +435,12 @@ func parseContributorFiles(readmeEntries []directoryReadme) (
 			)
 		}
 	}
-	if len(yamlValidationErrors.Errors) != 0 {
-		return nil, yamlValidationErrors
-	}
-
-	contributorError := workflowPhaseError{
-		Phase: "Contributor struct remapping",
-	}
-	structured := map[string]contributorProfile{}
-	for _, yml := range frontmatterByGithub {
-		group := employeeGithubGroups[yml.GithubUsername]
-		remapped := remapContributorProfile(yml, group)
-		structured[yml.GithubUsername] = remapped
-	}
 	for companyName, group := range employeeGithubGroups {
-		if _, found := structured[companyName]; found {
+		if _, found := frontmatterByUsername[companyName]; found {
 			continue
 		}
-		contributorError.Errors = append(
-			contributorError.Errors,
+		yamlValidationErrors.Errors = append(
+			yamlValidationErrors.Errors,
 			fmt.Errorf(
 				"company %q does not exist in %q directory but is referenced by these profiles: [%s]",
 				companyName,
@@ -539,11 +449,11 @@ func parseContributorFiles(readmeEntries []directoryReadme) (
 			),
 		)
 	}
-	if len(contributorError.Errors) != 0 {
-		return nil, contributorError
+	if len(yamlValidationErrors.Errors) != 0 {
+		return nil, yamlValidationErrors
 	}
 
-	return structured, nil
+	return frontmatterByUsername, nil
 }
 
 func aggregateReadmeFiles() ([]directoryReadme, error) {
@@ -590,7 +500,7 @@ func aggregateReadmeFiles() ([]directoryReadme, error) {
 }
 
 func validateRelativeUrls(
-	contributors map[string]contributorProfile,
+	contributors map[string]contributorFrontmatterWithFilepath,
 ) error {
 	// This function only validates relative avatar URLs for now, but it can be
 	// beefed up to validate more in the future
@@ -639,7 +549,7 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	log.Println("all relative URLs for READMEs are valid")
+	log.Println("All relative URLs for READMEs are valid")
 
 	log.Printf(
 		"Processed all READMEs in the %q directory\n",
