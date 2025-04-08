@@ -63,6 +63,7 @@ func (status contributorProfileStatus) String() string {
 type contributorProfile struct {
 	EmployeeGithubUsernames []string
 	GithubUsername          string
+	FilePath                string
 	DisplayName             string
 	Bio                     string
 	AvatarUrl               *string
@@ -406,6 +407,7 @@ func remapContributorProfile(
 	// copy over verbatim when appropriate, and (2) any missing avatar URLs will
 	// be backfilled during the main Registry site build step
 	remapped := contributorProfile{
+		FilePath:       frontmatter.FilePath,
 		DisplayName:    frontmatter.DisplayName,
 		GithubUsername: frontmatter.GithubUsername,
 		Bio:            frontmatter.Bio,
@@ -544,24 +546,19 @@ func parseContributorFiles(readmeEntries []directoryReadme) (
 	return structured, nil
 }
 
-func main() {
-	log.Println("Starting README validation")
+func aggregateReadmeFiles() ([]directoryReadme, error) {
 	dirEntries, err := os.ReadDir(rootRegistryPath)
 	if err != nil {
-		log.Panic(err)
+		return nil, err
 	}
-	log.Printf("Identified %d top-level directory entries\n", len(dirEntries))
 
 	allReadmeFiles := []directoryReadme{}
-	fsErrors := workflowPhaseError{
-		Phase:  "FileSystem reading",
-		Errors: []error{},
-	}
+	problems := []error{}
 	for _, e := range dirEntries {
 		dirPath := path.Join(rootRegistryPath, e.Name())
 		if !e.IsDir() {
-			fsErrors.Errors = append(
-				fsErrors.Errors,
+			problems = append(
+				problems,
 				fmt.Errorf(
 					"Detected non-directory file %q at base of main Registry directory",
 					dirPath,
@@ -573,7 +570,7 @@ func main() {
 		readmePath := path.Join(dirPath, "README.md")
 		rmBytes, err := os.ReadFile(readmePath)
 		if err != nil {
-			fsErrors.Errors = append(fsErrors.Errors, err)
+			problems = append(problems, err)
 			continue
 		}
 		allReadmeFiles = append(allReadmeFiles, directoryReadme{
@@ -581,8 +578,51 @@ func main() {
 			RawText:  string(rmBytes),
 		})
 	}
-	if len(fsErrors.Errors) != 0 {
-		log.Panic(fsErrors)
+
+	if len(problems) != 0 {
+		return nil, workflowPhaseError{
+			Phase:  "FileSystem reading",
+			Errors: problems,
+		}
+	}
+
+	return allReadmeFiles, nil
+}
+
+func validateRelativeUrls(
+	contributors map[string]contributorProfile,
+) error {
+	// This function only validates relative avatar URLs for now, but it can be
+	// beefed up to validate more in the future
+	problems := []error{}
+
+	for _, con := range contributors {
+		if con.AvatarUrl == nil {
+			continue
+		}
+		isRelativeUrl := strings.HasPrefix(*con.AvatarUrl, ".") ||
+			strings.HasPrefix(*con.AvatarUrl, "/")
+		if !isRelativeUrl {
+			continue
+		}
+
+		fmt.Println(con.GithubUsername, con.AvatarUrl)
+	}
+
+	if len(problems) == 0 {
+		return nil
+	}
+	return workflowPhaseError{
+		Phase:  "Relative URL validation",
+		Errors: problems,
+	}
+}
+
+func main() {
+	log.Println("Starting README validation")
+	allReadmeFiles, err := aggregateReadmeFiles()
+	if err != nil {
+		panic(err)
 	}
 
 	log.Printf("Processing %d README files\n", len(allReadmeFiles))
@@ -594,6 +634,12 @@ func main() {
 		"Processed %d README files as valid contributor profiles",
 		len(contributors),
 	)
+
+	err = validateRelativeUrls(contributors)
+	if err != nil {
+		log.Panic(err)
+	}
+	log.Println("all relative URLs for READMEs are valid")
 
 	log.Printf(
 		"Processed all READMEs in the %q directory\n",
