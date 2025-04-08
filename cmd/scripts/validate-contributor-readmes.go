@@ -21,7 +21,7 @@ type directoryReadme struct {
 	RawText  string
 }
 
-type rawContributorProfileFrontmatter struct {
+type contributorProfileFrontmatter struct {
 	DisplayName            string  `yaml:"display_name"`
 	Bio                    string  `yaml:"bio"`
 	GithubUsername         string  `yaml:"github"`
@@ -33,8 +33,8 @@ type rawContributorProfileFrontmatter struct {
 	ContributorStatus      *string `yaml:"status"`
 }
 
-type contributorFrontmatterWithFilepath struct {
-	rawContributorProfileFrontmatter
+type contributorFrontmatterWithFilePath struct {
+	contributorProfileFrontmatter
 	FilePath string
 }
 
@@ -89,7 +89,7 @@ func extractFrontmatter(readmeText string) (string, error) {
 	return fm, nil
 }
 
-func validateContributorYaml(yml contributorFrontmatterWithFilepath) []error {
+func validateContributorYaml(yml contributorFrontmatterWithFilePath) []error {
 	// This function needs to aggregate a bunch of different problems, rather
 	// than stopping at the first one found, so using code blocks to section off
 	// logic for different fields
@@ -365,10 +365,10 @@ func validateContributorYaml(yml contributorFrontmatterWithFilepath) []error {
 }
 
 func parseContributorFiles(readmeEntries []directoryReadme) (
-	map[string]contributorFrontmatterWithFilepath,
+	map[string]contributorFrontmatterWithFilePath,
 	error,
 ) {
-	frontmatterByUsername := map[string]contributorFrontmatterWithFilepath{}
+	frontmatterByUsername := map[string]contributorFrontmatterWithFilePath{}
 	yamlParsingErrors := workflowPhaseError{
 		Phase: "YAML parsing",
 	}
@@ -382,7 +382,7 @@ func parseContributorFiles(readmeEntries []directoryReadme) (
 			continue
 		}
 
-		yml := rawContributorProfileFrontmatter{}
+		yml := contributorProfileFrontmatter{}
 		if err := yaml.Unmarshal([]byte(fm), &yml); err != nil {
 			yamlParsingErrors.Errors = append(
 				yamlParsingErrors.Errors,
@@ -390,9 +390,9 @@ func parseContributorFiles(readmeEntries []directoryReadme) (
 			)
 			continue
 		}
-		processed := contributorFrontmatterWithFilepath{
-			FilePath:                         rm.FilePath,
-			rawContributorProfileFrontmatter: yml,
+		processed := contributorFrontmatterWithFilePath{
+			FilePath:                      rm.FilePath,
+			contributorProfileFrontmatter: yml,
 		}
 
 		if prev, conflict := frontmatterByUsername[processed.GithubUsername]; conflict {
@@ -500,7 +500,7 @@ func aggregateReadmeFiles() ([]directoryReadme, error) {
 }
 
 func validateRelativeUrls(
-	contributors map[string]contributorFrontmatterWithFilepath,
+	contributors map[string]contributorFrontmatterWithFilePath,
 ) error {
 	// This function only validates relative avatar URLs for now, but it can be
 	// beefed up to validate more in the future
