@@ -414,7 +414,7 @@ func parseContributorFiles(readmeEntries []readme) (
 			contributorProfileFrontmatter: yml,
 		}
 
-		if prev, conflict := frontmatterByUsername[processed.GithubUsername]; conflict {
+		if prev, isConflict := frontmatterByUsername[processed.GithubUsername]; isConflict {
 			yamlParsingErrors.Errors = append(
 				yamlParsingErrors.Errors,
 				fmt.Errorf(
@@ -531,6 +531,17 @@ func validateRelativeUrls(
 		}
 		if isRelativeUrl := strings.HasPrefix(*con.AvatarUrl, ".") ||
 			strings.HasPrefix(*con.AvatarUrl, "/"); !isRelativeUrl {
+			continue
+		}
+
+		if strings.HasPrefix(*con.AvatarUrl, "..") {
+			problems = append(
+				problems,
+				fmt.Errorf(
+					"%q: relative avatar URLs cannot be placed outside a user's namespaced directory",
+					con.FilePath,
+				),
+			)
 			continue
 		}
 
