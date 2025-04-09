@@ -16,7 +16,7 @@ import (
 
 const rootRegistryPath = "./registry"
 
-type directoryReadme struct {
+type readme struct {
 	FilePath string
 	RawText  string
 }
@@ -38,16 +38,16 @@ type contributorFrontmatterWithFilePath struct {
 	FilePath string
 }
 
-var _ error = workflowPhaseError{}
+var _ error = validationPhaseError{}
 
-type workflowPhaseError struct {
+type validationPhaseError struct {
 	Phase  string
 	Errors []error
 }
 
-func (wpe workflowPhaseError) Error() string {
-	msg := fmt.Sprintf("Error during %q phase of README validation:", wpe.Phase)
-	for _, e := range wpe.Errors {
+func (vpe validationPhaseError) Error() string {
+	msg := fmt.Sprintf("Error during %q phase of README validation:", vpe.Phase)
+	for _, e := range vpe.Errors {
 		msg += fmt.Sprintf("\n- %v", e)
 	}
 	msg += "\n"
@@ -383,12 +383,12 @@ func validateContributorYaml(yml contributorFrontmatterWithFilePath) []error {
 	return problems
 }
 
-func parseContributorFiles(readmeEntries []directoryReadme) (
+func parseContributorFiles(readmeEntries []readme) (
 	map[string]contributorFrontmatterWithFilePath,
 	error,
 ) {
 	frontmatterByUsername := map[string]contributorFrontmatterWithFilePath{}
-	yamlParsingErrors := workflowPhaseError{
+	yamlParsingErrors := validationPhaseError{
 		Phase: "YAML parsing",
 	}
 	for _, rm := range readmeEntries {
@@ -434,7 +434,7 @@ func parseContributorFiles(readmeEntries []directoryReadme) (
 	}
 
 	employeeGithubGroups := map[string][]string{}
-	yamlValidationErrors := workflowPhaseError{
+	yamlValidationErrors := validationPhaseError{
 		Phase: "Raw YAML Validation",
 	}
 	for _, yml := range frontmatterByUsername {
@@ -475,13 +475,13 @@ func parseContributorFiles(readmeEntries []directoryReadme) (
 	return frontmatterByUsername, nil
 }
 
-func aggregateReadmeFiles() ([]directoryReadme, error) {
+func aggregateContributorReadmeFiles() ([]readme, error) {
 	dirEntries, err := os.ReadDir(rootRegistryPath)
 	if err != nil {
 		return nil, err
 	}
 
-	allReadmeFiles := []directoryReadme{}
+	allReadmeFiles := []readme{}
 	problems := []error{}
 	for _, e := range dirEntries {
 		dirPath := path.Join(rootRegistryPath, e.Name())
@@ -502,14 +502,14 @@ func aggregateReadmeFiles() ([]directoryReadme, error) {
 			problems = append(problems, err)
 			continue
 		}
-		allReadmeFiles = append(allReadmeFiles, directoryReadme{
+		allReadmeFiles = append(allReadmeFiles, readme{
 			FilePath: readmePath,
 			RawText:  string(rmBytes),
 		})
 	}
 
 	if len(problems) != 0 {
-		return nil, workflowPhaseError{
+		return nil, validationPhaseError{
 			Phase:  "FileSystem reading",
 			Errors: problems,
 		}
@@ -552,7 +552,7 @@ func validateRelativeUrls(
 	if len(problems) == 0 {
 		return nil
 	}
-	return workflowPhaseError{
+	return validationPhaseError{
 		Phase:  "Relative URL validation",
 		Errors: problems,
 	}
@@ -560,9 +560,9 @@ func validateRelativeUrls(
 
 func main() {
 	log.Println("Starting README validation")
-	allReadmeFiles, err := aggregateReadmeFiles()
+	allReadmeFiles, err := aggregateContributorReadmeFiles()
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 
 	log.Printf("Processing %d README files\n", len(allReadmeFiles))
