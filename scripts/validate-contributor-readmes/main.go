@@ -298,59 +298,55 @@ func validateContributorYaml(yml contributorFrontmatterWithFilePath) []error {
 	return allProblems
 }
 
+func parseContributor(rm readme) (contributorFrontmatterWithFilePath, error) {
+	fm, err := extractFrontmatter(rm.RawText)
+	if err != nil {
+		return contributorFrontmatterWithFilePath{}, fmt.Errorf("%q: failed to parse frontmatter: %v", rm.FilePath, err)
+	}
+
+	yml := contributorProfileFrontmatter{}
+	if err := yaml.Unmarshal([]byte(fm), &yml); err != nil {
+		return contributorFrontmatterWithFilePath{}, fmt.Errorf("%q: failed to parse: %v", rm.FilePath, err)
+	}
+
+	return contributorFrontmatterWithFilePath{
+		FilePath:                      rm.FilePath,
+		contributorProfileFrontmatter: yml,
+	}, nil
+}
+
 func parseContributorFiles(readmeEntries []readme) (
 	map[string]contributorFrontmatterWithFilePath,
 	error,
 ) {
 	frontmatterByUsername := map[string]contributorFrontmatterWithFilePath{}
-	yamlParsingErrors := validationPhaseError{
-		Phase: "YAML parsing",
-	}
+	yamlParsingErrors := []error{}
 	for _, rm := range readmeEntries {
-		fm, err := extractFrontmatter(rm.RawText)
+		fm, err := parseContributor(rm)
 		if err != nil {
-			yamlParsingErrors.Errors = append(
-				yamlParsingErrors.Errors,
-				fmt.Errorf("%q: failed to parse: %v", rm.FilePath, err),
-			)
+			yamlParsingErrors = append(yamlParsingErrors, err)
 			continue
 		}
 
-		yml := contributorProfileFrontmatter{}
-		if err := yaml.Unmarshal([]byte(fm), &yml); err != nil {
-			yamlParsingErrors.Errors = append(
-				yamlParsingErrors.Errors,
-				fmt.Errorf("%q: failed to parse: %v", rm.FilePath, err),
-			)
+		if prev, isConflict := frontmatterByUsername[fm.GithubUsername]; isConflict {
+			yamlParsingErrors = append(yamlParsingErrors, fmt.Errorf("%q: GitHub name %s conflicts with field defined in %q", fm.FilePath, fm.GithubUsername, prev.FilePath))
 			continue
 		}
-		processed := contributorFrontmatterWithFilePath{
-			FilePath:                      rm.FilePath,
-			contributorProfileFrontmatter: yml,
-		}
-
-		if prev, isConflict := frontmatterByUsername[processed.GithubUsername]; isConflict {
-			yamlParsingErrors.Errors = append(yamlParsingErrors.Errors, fmt.Errorf("%q: GitHub name %s conflicts with field defined in %q", processed.FilePath, processed.GithubUsername, prev.FilePath))
-			continue
-		}
-
-		frontmatterByUsername[processed.GithubUsername] = processed
+		frontmatterByUsername[fm.GithubUsername] = fm
 	}
-	if len(yamlParsingErrors.Errors) != 0 {
-		return nil, yamlParsingErrors
+	if len(yamlParsingErrors) != 0 {
+		return nil, validationPhaseError{
+			Phase:  "YAML parsing",
+			Errors: yamlParsingErrors,
+		}
 	}
 
 	employeeGithubGroups := map[string][]string{}
-	yamlValidationErrors := validationPhaseError{
-		Phase: "Raw YAML Validation",
-	}
+	yamlValidationErrors := []error{}
 	for _, yml := range frontmatterByUsername {
 		errors := validateContributorYaml(yml)
 		if len(errors) > 0 {
-			yamlValidationErrors.Errors = append(
-				yamlValidationErrors.Errors,
-				errors...,
-			)
+			yamlValidationErrors = append(yamlValidationErrors, errors...)
 			continue
 		}
 
@@ -365,10 +361,13 @@ func parseContributorFiles(readmeEntries []readme) (
 		if _, found := frontmatterByUsername[companyName]; found {
 			continue
 		}
-		yamlValidationErrors.Errors = append(yamlValidationErrors.Errors, fmt.Errorf("company %q does not exist in %q directory but is referenced by these profiles: [%s]", companyName, rootRegistryPath, strings.Join(group, ", ")))
+		yamlValidationErrors = append(yamlValidationErrors, fmt.Errorf("company %q does not exist in %q directory but is referenced by these profiles: [%s]", companyName, rootRegistryPath, strings.Join(group, ", ")))
 	}
-	if len(yamlValidationErrors.Errors) != 0 {
-		return nil, yamlValidationErrors
+	if len(yamlValidationErrors) != 0 {
+		return nil, validationPhaseError{
+			Phase:  "Raw YAML Validation",
+			Errors: yamlValidationErrors,
+		}
 	}
 
 	return frontmatterByUsername, nil
