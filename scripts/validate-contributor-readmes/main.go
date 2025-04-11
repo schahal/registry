@@ -1,3 +1,8 @@
+// This package is for validating all contributors within the main Registry
+// directory. It validates that it has nothing but sub-directories, and that
+// each sub-directory has a README.md file. Each of those files must then
+// describe a specific contributor. The contents of these files will be parsed
+// by the Registry site build step, to be displayed in the Registry site's UI.
 package main
 
 import (
@@ -104,7 +109,7 @@ func validateContributorGithubUsername(fm contributorFrontmatterWithFilePath) []
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"missing GitHub username for %q",
+				"%q: missing GitHub username",
 				fm.FilePath,
 			),
 		)
@@ -116,9 +121,9 @@ func validateContributorGithubUsername(fm contributorFrontmatterWithFilePath) []
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"gitHub username %q (%q) is not a valid URL path segment",
-				fm.GithubUsername,
+				"%q: gitHub username %q is not a valid URL path segment",
 				fm.FilePath,
+				fm.GithubUsername,
 			),
 		)
 	}
@@ -137,7 +142,7 @@ func validateContributorEmployerGithubUsername(fm contributorFrontmatterWithFile
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"company_github field is defined but has empty value for %q",
+				"%q: company_github field is defined but has empty value",
 				fm.FilePath,
 			),
 		)
@@ -149,9 +154,9 @@ func validateContributorEmployerGithubUsername(fm contributorFrontmatterWithFile
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"gitHub company username %q (%q) is not a valid URL path segment",
-				*fm.EmployerGithubUsername,
+				"%q: gitHub company username %q is not a valid URL path segment",
 				fm.FilePath,
+				*fm.EmployerGithubUsername,
 			),
 		)
 	}
@@ -160,9 +165,9 @@ func validateContributorEmployerGithubUsername(fm contributorFrontmatterWithFile
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"cannot list own GitHub name (%q) as employer (%q)",
-				fm.GithubUsername,
+				"%q: cannot list own GitHub name (%q) as employer",
 				fm.FilePath,
+				fm.GithubUsername,
 			),
 		)
 	}
@@ -176,9 +181,9 @@ func validateContributorDisplayName(fm contributorFrontmatterWithFilePath) []err
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"GitHub user %q (%q) is missing display name",
-				fm.GithubUsername,
+				"%q: GitHub user %q is missing display name",
 				fm.FilePath,
+				fm.GithubUsername,
 			),
 		)
 	}
@@ -196,7 +201,7 @@ func validateContributorLinkedinURL(fm contributorFrontmatterWithFilePath) []err
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"linkedIn URL %q (%q) is not valid: %v",
+				"%q: linkedIn URL %q is not valid: %v",
 				*fm.LinkedinURL,
 				fm.FilePath,
 				err,
@@ -223,9 +228,9 @@ func validateContributorEmail(fm contributorFrontmatterWithFilePath) []error {
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"email address %q (%q) is missing @ symbol",
-				*fm.LinkedinURL,
+				"%q: email address %q is missing @ symbol",
 				fm.FilePath,
+				*fm.LinkedinURL,
 			),
 		)
 		return problems
@@ -235,9 +240,9 @@ func validateContributorEmail(fm contributorFrontmatterWithFilePath) []error {
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"email address %q (%q) is missing username",
-				*fm.LinkedinURL,
+				"%q: email address %q is missing username",
 				fm.FilePath,
+				*fm.LinkedinURL,
 			),
 		)
 	}
@@ -247,9 +252,9 @@ func validateContributorEmail(fm contributorFrontmatterWithFilePath) []error {
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"email address %q (%q) is missing period for server segment",
-				*fm.LinkedinURL,
+				"%q: email address %q is missing period for server segment",
 				fm.FilePath,
+				*fm.LinkedinURL,
 			),
 		)
 		return problems
@@ -259,9 +264,9 @@ func validateContributorEmail(fm contributorFrontmatterWithFilePath) []error {
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"email address %q (%q) is missing domain",
-				*fm.LinkedinURL,
+				"%q: email address %q is missing domain",
 				fm.FilePath,
+				*fm.LinkedinURL,
 			),
 		)
 	}
@@ -270,9 +275,9 @@ func validateContributorEmail(fm contributorFrontmatterWithFilePath) []error {
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"email address %q (%q) is missing top-level domain",
-				*fm.LinkedinURL,
+				"%q: email address %q is missing top-level domain",
 				fm.FilePath,
+				*fm.LinkedinURL,
 			),
 		)
 	}
@@ -281,7 +286,7 @@ func validateContributorEmail(fm contributorFrontmatterWithFilePath) []error {
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"email for %q is not allowed to contain search parameters",
+				"%q: email is not allowed to contain search parameters",
 				fm.FilePath,
 			),
 		)
@@ -300,9 +305,9 @@ func validateContributorWebsite(fm contributorFrontmatterWithFilePath) []error {
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"LinkedIn URL %q (%q) is not valid: %v",
-				*fm.WebsiteURL,
+				"%q: LinkedIn URL %q is not valid: %v",
 				fm.FilePath,
+				*fm.WebsiteURL,
 				err,
 			),
 		)
@@ -322,9 +327,9 @@ func validateContributorStatus(fm contributorFrontmatterWithFilePath) []error {
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"contributor status %q (%q) is not valid",
-				*fm.ContributorStatus,
+				"%q: contributor status %q is not valid",
 				fm.FilePath,
+				*fm.ContributorStatus,
 			),
 		)
 	}
@@ -344,7 +349,7 @@ func validateContributorAvatarURL(fm contributorFrontmatterWithFilePath) []error
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"avatar URL for %q must be omitted or non-empty string",
+				"%q: avatar URL must be omitted or non-empty string",
 				fm.FilePath,
 			),
 		)
@@ -357,9 +362,9 @@ func validateContributorAvatarURL(fm contributorFrontmatterWithFilePath) []error
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"error %q (%q) is not a valid relative or absolute URL",
-				*fm.AvatarURL,
+				"%q: URL %q is not a valid relative or absolute URL",
 				fm.FilePath,
+				*fm.AvatarURL,
 			),
 		)
 	}
@@ -368,7 +373,7 @@ func validateContributorAvatarURL(fm contributorFrontmatterWithFilePath) []error
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"avatar URL for %q is not allowed to contain search parameters",
+				"%q: avatar URL is not allowed to contain search parameters",
 				fm.FilePath,
 			),
 		)
@@ -383,11 +388,14 @@ func validateContributorAvatarURL(fm contributorFrontmatterWithFilePath) []error
 		}
 	}
 	if !matched {
+		segments := strings.Split(*fm.AvatarURL, ".")
+		fileExtension := segments[len(segments)-1]
 		problems = append(
 			problems,
 			fmt.Errorf(
-				"avatar URL for %q does not end in a supported file format: [%s]",
+				"%q: avatar URL '.%s' does not end in a supported file format: [%s]",
 				fm.FilePath,
+				fileExtension,
 				strings.Join(supportedFileFormats, ", "),
 			),
 		)
@@ -427,7 +435,7 @@ func parseContributorFiles(readmeEntries []readme) (
 		if err != nil {
 			yamlParsingErrors.Errors = append(
 				yamlParsingErrors.Errors,
-				fmt.Errorf("failed to parse %q: %v", rm.FilePath, err),
+				fmt.Errorf("%q: failed to parse: %v", rm.FilePath, err),
 			)
 			continue
 		}
@@ -436,7 +444,7 @@ func parseContributorFiles(readmeEntries []readme) (
 		if err := yaml.Unmarshal([]byte(fm), &yml); err != nil {
 			yamlParsingErrors.Errors = append(
 				yamlParsingErrors.Errors,
-				fmt.Errorf("failed to parse %q: %v", rm.FilePath, err),
+				fmt.Errorf("%q: failed to parse: %v", rm.FilePath, err),
 			)
 			continue
 		}
@@ -449,10 +457,10 @@ func parseContributorFiles(readmeEntries []readme) (
 			yamlParsingErrors.Errors = append(
 				yamlParsingErrors.Errors,
 				fmt.Errorf(
-					"GitHub name conflict for %q for files %q and %q",
+					"%q: GitHub name %s conflicts with field defined in %q",
+					processed.FilePath,
 					processed.GithubUsername,
 					prev.FilePath,
-					processed.FilePath,
 				),
 			)
 			continue
@@ -583,9 +591,9 @@ func validateRelativeUrls(
 			problems = append(
 				problems,
 				fmt.Errorf(
-					"relative avatar path %q for %q does not point to image in file system",
-					*con.AvatarURL,
+					"%q: relative avatar path %q does not point to image in file system",
 					con.FilePath,
+					*con.AvatarURL,
 				),
 			)
 		}
