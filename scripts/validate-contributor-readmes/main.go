@@ -53,10 +53,14 @@ type validationPhaseError struct {
 }
 
 func (vpe validationPhaseError) Error() string {
-	msg := fmt.Sprintf("Error during %q phase of README validation:", vpe.Phase)
+	validationStrs := []string{}
 	for _, e := range vpe.Errors {
-		msg += fmt.Sprintf("\n- %v", e)
+		validationStrs = append(validationStrs, fmt.Sprintf("- %v", e))
 	}
+	slices.Sort(validationStrs)
+
+	msg := fmt.Sprintf("Error during %q phase of README validation:", vpe.Phase)
+	msg += strings.Join(validationStrs, "\n")
 	msg += "\n"
 
 	return msg
@@ -96,124 +100,67 @@ func extractFrontmatter(readmeText string) (string, error) {
 	return fm, nil
 }
 
-// A validation function for verifying one specific aspect of a contributor's
-// frontmatter content. Each function should be able to return ALL data
-// violations that apply to the function's area of concern, rather than
-// returning the first error found
-type contributorValidationFunc = func(fm contributorFrontmatterWithFilePath) []error
-
-func validateContributorGithubUsername(fm contributorFrontmatterWithFilePath) []error {
-	problems := []error{}
-
-	if fm.GithubUsername == "" {
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: missing GitHub username",
-				fm.FilePath,
-			),
-		)
-		return problems
+func validateContributorGithubUsername(githubUsername string) error {
+	if githubUsername == "" {
+		return errors.New("missing GitHub username")
 	}
 
-	lower := strings.ToLower(fm.GithubUsername)
+	lower := strings.ToLower(githubUsername)
 	if uriSafe := url.PathEscape(lower); uriSafe != lower {
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: gitHub username %q is not a valid URL path segment",
-				fm.FilePath,
-				fm.GithubUsername,
-			),
-		)
+		return fmt.Errorf("gitHub username %q is not a valid URL path segment", githubUsername)
 	}
 
-	return problems
+	return nil
 }
 
-func validateContributorEmployerGithubUsername(fm contributorFrontmatterWithFilePath) []error {
-	if fm.EmployerGithubUsername == nil {
+func validateContributorEmployerGithubUsername(
+	employerGithubUsername *string,
+	githubUsername string,
+) []error {
+	if employerGithubUsername == nil {
 		return nil
 	}
 
 	problems := []error{}
-
-	if *fm.EmployerGithubUsername == "" {
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: company_github field is defined but has empty value",
-				fm.FilePath,
-			),
-		)
+	if *employerGithubUsername == "" {
+		problems = append(problems, errors.New("company_github field is defined but has empty value"))
 		return problems
 	}
 
-	lower := strings.ToLower(*fm.EmployerGithubUsername)
+	lower := strings.ToLower(*employerGithubUsername)
 	if uriSafe := url.PathEscape(lower); uriSafe != lower {
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: gitHub company username %q is not a valid URL path segment",
-				fm.FilePath,
-				*fm.EmployerGithubUsername,
-			),
-		)
+		problems = append(problems, fmt.Errorf("gitHub company username %q is not a valid URL path segment", *employerGithubUsername))
 	}
 
-	if *fm.EmployerGithubUsername == fm.GithubUsername {
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: cannot list own GitHub name (%q) as employer",
-				fm.FilePath,
-				fm.GithubUsername,
-			),
-		)
+	if *employerGithubUsername == githubUsername {
+		problems = append(problems, fmt.Errorf("cannot list own GitHub name (%q) as employer", githubUsername))
 	}
 
 	return problems
 }
 
-func validateContributorDisplayName(fm contributorFrontmatterWithFilePath) []error {
-	problems := []error{}
-	if fm.DisplayName == "" {
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: GitHub user %q is missing display name",
-				fm.FilePath,
-				fm.GithubUsername,
-			),
-		)
+func validateContributorDisplayName(displayName string) error {
+	if displayName == "" {
+		return fmt.Errorf("missing display_name")
 	}
 
-	return problems
+	return nil
 }
 
-func validateContributorLinkedinURL(fm contributorFrontmatterWithFilePath) []error {
-	if fm.LinkedinURL == nil {
+func validateContributorLinkedinURL(linkedinURL *string) error {
+	if linkedinURL == nil {
 		return nil
 	}
 
-	problems := []error{}
-	if _, err := url.ParseRequestURI(*fm.LinkedinURL); err != nil {
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: linkedIn URL %q is not valid: %v",
-				*fm.LinkedinURL,
-				fm.FilePath,
-				err,
-			),
-		)
+	if _, err := url.ParseRequestURI(*linkedinURL); err != nil {
+		return fmt.Errorf("linkedIn URL %q is not valid: %v", *linkedinURL, err)
 	}
 
-	return problems
+	return nil
 }
 
-func validateContributorEmail(fm contributorFrontmatterWithFilePath) []error {
-	if fm.SupportEmail == nil {
+func validateContributorSupportEmail(email *string) []error {
+	if email == nil {
 		return nil
 	}
 
@@ -223,202 +170,131 @@ func validateContributorEmail(fm contributorFrontmatterWithFilePath) []error {
 	// an email, and especially with some contributors being individual
 	// developers, we don't want to do that on every single run of the CI
 	// pipeline. Best we can do is verify the general structure
-	username, server, ok := strings.Cut(*fm.SupportEmail, "@")
+	username, server, ok := strings.Cut(*email, "@")
 	if !ok {
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: email address %q is missing @ symbol",
-				fm.FilePath,
-				*fm.LinkedinURL,
-			),
-		)
+		problems = append(problems, fmt.Errorf("email address %q is missing @ symbol", *email))
 		return problems
 	}
 
 	if username == "" {
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: email address %q is missing username",
-				fm.FilePath,
-				*fm.LinkedinURL,
-			),
-		)
+		problems = append(problems, fmt.Errorf("email address %q is missing username", *email))
 	}
 
 	domain, tld, ok := strings.Cut(server, ".")
 	if !ok {
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: email address %q is missing period for server segment",
-				fm.FilePath,
-				*fm.LinkedinURL,
-			),
-		)
+		problems = append(problems, fmt.Errorf("email address %q is missing period for server segment", *email))
 		return problems
 	}
 
 	if domain == "" {
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: email address %q is missing domain",
-				fm.FilePath,
-				*fm.LinkedinURL,
-			),
-		)
+		problems = append(problems, fmt.Errorf("email address %q is missing domain", *email))
 	}
-
 	if tld == "" {
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: email address %q is missing top-level domain",
-				fm.FilePath,
-				*fm.LinkedinURL,
-			),
-		)
+		problems = append(problems, fmt.Errorf("email address %q is missing top-level domain", *email))
 	}
-
-	if strings.Contains(*fm.SupportEmail, "?") {
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: email is not allowed to contain search parameters",
-				fm.FilePath,
-			),
-		)
+	if strings.Contains(*email, "?") {
+		problems = append(problems, errors.New("email is not allowed to contain search parameters"))
 	}
 
 	return problems
 }
 
-func validateContributorWebsite(fm contributorFrontmatterWithFilePath) []error {
-	if fm.WebsiteURL == nil {
+func validateContributorWebsite(websiteURL *string) error {
+	if websiteURL == nil {
 		return nil
 	}
 
-	problems := []error{}
-	if _, err := url.ParseRequestURI(*fm.WebsiteURL); err != nil {
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: LinkedIn URL %q is not valid: %v",
-				fm.FilePath,
-				*fm.WebsiteURL,
-				err,
-			),
-		)
+	if _, err := url.ParseRequestURI(*websiteURL); err != nil {
+		return fmt.Errorf("linkedIn URL %q is not valid: %v", *websiteURL, err)
 	}
 
-	return problems
+	return nil
 }
 
-func validateContributorStatus(fm contributorFrontmatterWithFilePath) []error {
-	if fm.ContributorStatus == nil {
+func validateContributorStatus(status *string) error {
+	if status == nil {
 		return nil
 	}
 
-	problems := []error{}
 	validStatuses := []string{"official", "partner", "community"}
-	if !slices.Contains(validStatuses, *fm.ContributorStatus) {
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: contributor status %q is not valid",
-				fm.FilePath,
-				*fm.ContributorStatus,
-			),
-		)
+	if !slices.Contains(validStatuses, *status) {
+		return fmt.Errorf("contributor status %q is not valid", *status)
 	}
 
-	return problems
+	return nil
 }
 
 // Can't validate the image actually leads to a valid resource in a pure
 // function, but can at least catch obvious problems
-func validateContributorAvatarURL(fm contributorFrontmatterWithFilePath) []error {
-	if fm.AvatarURL == nil {
+func validateContributorAvatarURL(avatarURL *string) []error {
+	if avatarURL == nil {
 		return nil
 	}
 
 	problems := []error{}
-	if *fm.AvatarURL == "" {
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: avatar URL must be omitted or non-empty string",
-				fm.FilePath,
-			),
-		)
+	if *avatarURL == "" {
+		problems = append(problems, errors.New("avatar URL must be omitted or non-empty string"))
 		return problems
 	}
 
 	// Have to use .Parse instead of .ParseRequestURI because this is the
 	// one field that's allowed to be a relative URL
-	if _, err := url.Parse(*fm.AvatarURL); err != nil {
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: URL %q is not a valid relative or absolute URL",
-				fm.FilePath,
-				*fm.AvatarURL,
-			),
-		)
+	if _, err := url.Parse(*avatarURL); err != nil {
+		problems = append(problems, fmt.Errorf("URL %q is not a valid relative or absolute URL", *avatarURL))
 	}
-
-	if strings.Contains(*fm.AvatarURL, "?") {
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: avatar URL is not allowed to contain search parameters",
-				fm.FilePath,
-			),
-		)
+	if strings.Contains(*avatarURL, "?") {
+		problems = append(problems, errors.New("avatar URL is not allowed to contain search parameters"))
 	}
 
 	supportedFileFormats := []string{".png", ".jpeg", ".jpg", ".gif", ".svg"}
 	matched := false
 	for _, ff := range supportedFileFormats {
-		matched = strings.HasSuffix(*fm.AvatarURL, ff)
+		matched = strings.HasSuffix(*avatarURL, ff)
 		if matched {
 			break
 		}
 	}
 	if !matched {
-		segments := strings.Split(*fm.AvatarURL, ".")
+		segments := strings.Split(*avatarURL, ".")
 		fileExtension := segments[len(segments)-1]
-		problems = append(
-			problems,
-			fmt.Errorf(
-				"%q: avatar URL '.%s' does not end in a supported file format: [%s]",
-				fm.FilePath,
-				fileExtension,
-				strings.Join(supportedFileFormats, ", "),
-			),
-		)
+		problems = append(problems, fmt.Errorf("avatar URL '.%s' does not end in a supported file format: [%s]", fileExtension, strings.Join(supportedFileFormats, ", ")))
 	}
 
 	return problems
 }
 
 func validateContributorYaml(yml contributorFrontmatterWithFilePath) []error {
-	validationFuncs := []contributorValidationFunc{
-		validateContributorGithubUsername,
-		validateContributorEmployerGithubUsername,
-		validateContributorDisplayName,
-		validateContributorLinkedinURL,
-		validateContributorEmail,
-		validateContributorWebsite,
-		validateContributorStatus,
-		validateContributorAvatarURL,
-	}
 	allProblems := []error{}
-	for _, fn := range validationFuncs {
-		allProblems = append(allProblems, fn(yml)...)
+	addFilePath := func(err error) error {
+		return fmt.Errorf("%q: %v", yml.FilePath, err)
 	}
+
+	if err := validateContributorGithubUsername(yml.GithubUsername); err != nil {
+		allProblems = append(allProblems, addFilePath(err))
+	}
+	if err := validateContributorDisplayName(yml.DisplayName); err != nil {
+		allProblems = append(allProblems, addFilePath(err))
+	}
+	if err := validateContributorLinkedinURL(yml.LinkedinURL); err != nil {
+		allProblems = append(allProblems, addFilePath(err))
+	}
+	if err := validateContributorWebsite(yml.WebsiteURL); err != nil {
+		allProblems = append(allProblems, addFilePath(err))
+	}
+	if err := validateContributorStatus(yml.ContributorStatus); err != nil {
+		allProblems = append(allProblems, addFilePath(err))
+	}
+
+	for _, err := range validateContributorEmployerGithubUsername(yml.EmployerGithubUsername, yml.GithubUsername) {
+		allProblems = append(allProblems, addFilePath(err))
+	}
+	for _, err := range validateContributorSupportEmail(yml.SupportEmail) {
+		allProblems = append(allProblems, addFilePath(err))
+	}
+	for _, err := range validateContributorAvatarURL(yml.AvatarURL) {
+		allProblems = append(allProblems, addFilePath(err))
+	}
+
 	return allProblems
 }
 
@@ -454,15 +330,7 @@ func parseContributorFiles(readmeEntries []readme) (
 		}
 
 		if prev, isConflict := frontmatterByUsername[processed.GithubUsername]; isConflict {
-			yamlParsingErrors.Errors = append(
-				yamlParsingErrors.Errors,
-				fmt.Errorf(
-					"%q: GitHub name %s conflicts with field defined in %q",
-					processed.FilePath,
-					processed.GithubUsername,
-					prev.FilePath,
-				),
-			)
+			yamlParsingErrors.Errors = append(yamlParsingErrors.Errors, fmt.Errorf("%q: GitHub name %s conflicts with field defined in %q", processed.FilePath, processed.GithubUsername, prev.FilePath))
 			continue
 		}
 
@@ -497,15 +365,7 @@ func parseContributorFiles(readmeEntries []readme) (
 		if _, found := frontmatterByUsername[companyName]; found {
 			continue
 		}
-		yamlValidationErrors.Errors = append(
-			yamlValidationErrors.Errors,
-			fmt.Errorf(
-				"company %q does not exist in %q directory but is referenced by these profiles: [%s]",
-				companyName,
-				rootRegistryPath,
-				strings.Join(group, ", "),
-			),
-		)
+		yamlValidationErrors.Errors = append(yamlValidationErrors.Errors, fmt.Errorf("company %q does not exist in %q directory but is referenced by these profiles: [%s]", companyName, rootRegistryPath, strings.Join(group, ", ")))
 	}
 	if len(yamlValidationErrors.Errors) != 0 {
 		return nil, yamlValidationErrors
@@ -525,13 +385,7 @@ func aggregateContributorReadmeFiles() ([]readme, error) {
 	for _, e := range dirEntries {
 		dirPath := path.Join(rootRegistryPath, e.Name())
 		if !e.IsDir() {
-			problems = append(
-				problems,
-				fmt.Errorf(
-					"Detected non-directory file %q at base of main Registry directory",
-					dirPath,
-				),
-			)
+			problems = append(problems, fmt.Errorf("detected non-directory file %q at base of main Registry directory", dirPath))
 			continue
 		}
 
@@ -565,6 +419,8 @@ func validateRelativeUrls(
 	problems := []error{}
 
 	for _, con := range contributors {
+		// If the avatar URL is missing, we'll just assume that the Registry
+		// site build step will take care of filling in the data properly
 		if con.AvatarURL == nil {
 			continue
 		}
@@ -574,13 +430,7 @@ func validateRelativeUrls(
 		}
 
 		if strings.HasPrefix(*con.AvatarURL, "..") {
-			problems = append(
-				problems,
-				fmt.Errorf(
-					"%q: relative avatar URLs cannot be placed outside a user's namespaced directory",
-					con.FilePath,
-				),
-			)
+			problems = append(problems, fmt.Errorf("%q: relative avatar URLs cannot be placed outside a user's namespaced directory", con.FilePath))
 			continue
 		}
 
@@ -588,14 +438,7 @@ func validateRelativeUrls(
 			*con.AvatarURL
 		_, err := os.ReadFile(absolutePath)
 		if err != nil {
-			problems = append(
-				problems,
-				fmt.Errorf(
-					"%q: relative avatar path %q does not point to image in file system",
-					con.FilePath,
-					*con.AvatarURL,
-				),
-			)
+			problems = append(problems, fmt.Errorf("%q: relative avatar path %q does not point to image in file system", con.FilePath, *con.AvatarURL))
 		}
 	}
 
