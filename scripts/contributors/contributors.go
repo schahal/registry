@@ -260,36 +260,37 @@ func validateContributorAvatarURL(avatarURL *string) []error {
 	return problems
 }
 
+func addFilePathToError(filePath string, err error) error {
+	return fmt.Errorf("%q: %v", filePath, err)
+}
+
 func validateContributorYaml(yml contributorProfile) []error {
 	allProblems := []error{}
-	addFilePath := func(err error) error {
-		return fmt.Errorf("%q: %v", yml.filePath, err)
-	}
 
 	if err := validateContributorGithubUsername(yml.frontmatter.GithubUsername); err != nil {
-		allProblems = append(allProblems, addFilePath(err))
+		allProblems = append(allProblems, addFilePathToError(yml.filePath, err))
 	}
 	if err := validateContributorDisplayName(yml.frontmatter.DisplayName); err != nil {
-		allProblems = append(allProblems, addFilePath(err))
+		allProblems = append(allProblems, addFilePathToError(yml.filePath, err))
 	}
 	if err := validateContributorLinkedinURL(yml.frontmatter.LinkedinURL); err != nil {
-		allProblems = append(allProblems, addFilePath(err))
+		allProblems = append(allProblems, addFilePathToError(yml.filePath, err))
 	}
 	if err := validateContributorWebsite(yml.frontmatter.WebsiteURL); err != nil {
-		allProblems = append(allProblems, addFilePath(err))
+		allProblems = append(allProblems, addFilePathToError(yml.filePath, err))
 	}
 	if err := validateContributorStatus(yml.frontmatter.ContributorStatus); err != nil {
-		allProblems = append(allProblems, addFilePath(err))
+		allProblems = append(allProblems, addFilePathToError(yml.filePath, err))
 	}
 
 	for _, err := range validateContributorEmployerGithubUsername(yml.frontmatter.EmployerGithubUsername, yml.frontmatter.GithubUsername) {
-		allProblems = append(allProblems, addFilePath(err))
+		allProblems = append(allProblems, addFilePathToError(yml.filePath, err))
 	}
 	for _, err := range validateContributorSupportEmail(yml.frontmatter.SupportEmail) {
-		allProblems = append(allProblems, addFilePath(err))
+		allProblems = append(allProblems, addFilePathToError(yml.filePath, err))
 	}
 	for _, err := range validateContributorAvatarURL(yml.frontmatter.AvatarURL) {
-		allProblems = append(allProblems, addFilePath(err))
+		allProblems = append(allProblems, addFilePathToError(yml.filePath, err))
 	}
 
 	return allProblems
