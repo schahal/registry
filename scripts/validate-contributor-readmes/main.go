@@ -21,9 +21,14 @@ import (
 
 const rootRegistryPath = "./registry"
 
+var (
+	validContributorStatuses   = []string{"official", "partner", "community"}
+	supportedAvatarFileFormats = []string{".png", ".jpeg", ".jpg", ".gif", ".svg"}
+)
+
 type readme struct {
-	FilePath string
-	RawText  string
+	filePath string
+	rawText  string
 }
 
 type contributorProfileFrontmatter struct {
@@ -48,18 +53,18 @@ type contributorFrontmatterWithFilePath struct {
 var _ error = validationPhaseError{}
 
 type validationPhaseError struct {
-	Phase  string
-	Errors []error
+	phase  string
+	errors []error
 }
 
 func (vpe validationPhaseError) Error() string {
 	validationStrs := []string{}
-	for _, e := range vpe.Errors {
+	for _, e := range vpe.errors {
 		validationStrs = append(validationStrs, fmt.Sprintf("- %v", e))
 	}
 	slices.Sort(validationStrs)
 
-	msg := fmt.Sprintf("Error during %q phase of README validation:", vpe.Phase)
+	msg := fmt.Sprintf("Error during %q phase of README validation:", vpe.phase)
 	msg += strings.Join(validationStrs, "\n")
 	msg += "\n"
 
@@ -193,7 +198,7 @@ func validateContributorSupportEmail(email *string) []error {
 		problems = append(problems, fmt.Errorf("email address %q is missing top-level domain", *email))
 	}
 	if strings.Contains(*email, "?") {
-		problems = append(problems, errors.New("email is not allowed to contain search parameters"))
+		problems = append(problems, errors.New("email is not allowed to contain query parameters"))
 	}
 
 	return problems
@@ -216,8 +221,7 @@ func validateContributorStatus(status *string) error {
 		return nil
 	}
 
-	validStatuses := []string{"official", "partner", "community"}
-	if !slices.Contains(validStatuses, *status) {
+	if !slices.Contains(validContributorStatuses, *status) {
 		return fmt.Errorf("contributor status %q is not valid", *status)
 	}
 
@@ -246,9 +250,8 @@ func validateContributorAvatarURL(avatarURL *string) []error {
 		problems = append(problems, errors.New("avatar URL is not allowed to contain search parameters"))
 	}
 
-	supportedFileFormats := []string{".png", ".jpeg", ".jpg", ".gif", ".svg"}
 	matched := false
-	for _, ff := range supportedFileFormats {
+	for _, ff := range supportedAvatarFileFormats {
 		matched = strings.HasSuffix(*avatarURL, ff)
 		if matched {
 			break
@@ -257,7 +260,7 @@ func validateContributorAvatarURL(avatarURL *string) []error {
 	if !matched {
 		segments := strings.Split(*avatarURL, ".")
 		fileExtension := segments[len(segments)-1]
-		problems = append(problems, fmt.Errorf("avatar URL '.%s' does not end in a supported file format: [%s]", fileExtension, strings.Join(supportedFileFormats, ", ")))
+		problems = append(problems, fmt.Errorf("avatar URL '.%s' does not end in a supported file format: [%s]", fileExtension, strings.Join(supportedAvatarFileFormats, ", ")))
 	}
 
 	return problems
@@ -299,18 +302,18 @@ func validateContributorYaml(yml contributorFrontmatterWithFilePath) []error {
 }
 
 func parseContributor(rm readme) (contributorFrontmatterWithFilePath, error) {
-	fm, err := extractFrontmatter(rm.RawText)
+	fm, err := extractFrontmatter(rm.rawText)
 	if err != nil {
-		return contributorFrontmatterWithFilePath{}, fmt.Errorf("%q: failed to parse frontmatter: %v", rm.FilePath, err)
+		return contributorFrontmatterWithFilePath{}, fmt.Errorf("%q: failed to parse frontmatter: %v", rm.filePath, err)
 	}
 
 	yml := contributorProfileFrontmatter{}
 	if err := yaml.Unmarshal([]byte(fm), &yml); err != nil {
-		return contributorFrontmatterWithFilePath{}, fmt.Errorf("%q: failed to parse: %v", rm.FilePath, err)
+		return contributorFrontmatterWithFilePath{}, fmt.Errorf("%q: failed to parse: %v", rm.filePath, err)
 	}
 
 	return contributorFrontmatterWithFilePath{
-		FilePath:                      rm.FilePath,
+		FilePath:                      rm.filePath,
 		contributorProfileFrontmatter: yml,
 	}, nil
 }
@@ -336,8 +339,8 @@ func parseContributorFiles(readmeEntries []readme) (
 	}
 	if len(yamlParsingErrors) != 0 {
 		return nil, validationPhaseError{
-			Phase:  "YAML parsing",
-			Errors: yamlParsingErrors,
+			phase:  "YAML parsing",
+			errors: yamlParsingErrors,
 		}
 	}
 
@@ -365,8 +368,8 @@ func parseContributorFiles(readmeEntries []readme) (
 	}
 	if len(yamlValidationErrors) != 0 {
 		return nil, validationPhaseError{
-			Phase:  "Raw YAML Validation",
-			Errors: yamlValidationErrors,
+			phase:  "Raw YAML Validation",
+			errors: yamlValidationErrors,
 		}
 	}
 
@@ -395,15 +398,15 @@ func aggregateContributorReadmeFiles() ([]readme, error) {
 			continue
 		}
 		allReadmeFiles = append(allReadmeFiles, readme{
-			FilePath: readmePath,
-			RawText:  string(rmBytes),
+			filePath: readmePath,
+			rawText:  string(rmBytes),
 		})
 	}
 
 	if len(problems) != 0 {
 		return nil, validationPhaseError{
-			Phase:  "FileSystem reading",
-			Errors: problems,
+			phase:  "FileSystem reading",
+			errors: problems,
 		}
 	}
 
@@ -445,8 +448,8 @@ func validateRelativeUrls(
 		return nil
 	}
 	return validationPhaseError{
-		Phase:  "Relative URL validation",
-		Errors: problems,
+		phase:  "Relative URL validation",
+		errors: problems,
 	}
 }
 
