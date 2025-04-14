@@ -45,9 +45,9 @@ type contributorProfileFrontmatter struct {
 	ContributorStatus      *string `yaml:"status"`
 }
 
-type contributorFrontmatterWithFilePath struct {
-	contributorProfileFrontmatter
-	FilePath string
+type contributorProfile struct {
+	frontmatter contributorProfileFrontmatter
+	filePath    string
 }
 
 var _ error = validationPhaseError{}
@@ -266,76 +266,73 @@ func validateContributorAvatarURL(avatarURL *string) []error {
 	return problems
 }
 
-func validateContributorYaml(yml contributorFrontmatterWithFilePath) []error {
+func validateContributorYaml(yml contributorProfile) []error {
 	allProblems := []error{}
 	addFilePath := func(err error) error {
-		return fmt.Errorf("%q: %v", yml.FilePath, err)
+		return fmt.Errorf("%q: %v", yml.filePath, err)
 	}
 
-	if err := validateContributorGithubUsername(yml.GithubUsername); err != nil {
+	if err := validateContributorGithubUsername(yml.frontmatter.GithubUsername); err != nil {
 		allProblems = append(allProblems, addFilePath(err))
 	}
-	if err := validateContributorDisplayName(yml.DisplayName); err != nil {
+	if err := validateContributorDisplayName(yml.frontmatter.DisplayName); err != nil {
 		allProblems = append(allProblems, addFilePath(err))
 	}
-	if err := validateContributorLinkedinURL(yml.LinkedinURL); err != nil {
+	if err := validateContributorLinkedinURL(yml.frontmatter.LinkedinURL); err != nil {
 		allProblems = append(allProblems, addFilePath(err))
 	}
-	if err := validateContributorWebsite(yml.WebsiteURL); err != nil {
+	if err := validateContributorWebsite(yml.frontmatter.WebsiteURL); err != nil {
 		allProblems = append(allProblems, addFilePath(err))
 	}
-	if err := validateContributorStatus(yml.ContributorStatus); err != nil {
+	if err := validateContributorStatus(yml.frontmatter.ContributorStatus); err != nil {
 		allProblems = append(allProblems, addFilePath(err))
 	}
 
-	for _, err := range validateContributorEmployerGithubUsername(yml.EmployerGithubUsername, yml.GithubUsername) {
+	for _, err := range validateContributorEmployerGithubUsername(yml.frontmatter.EmployerGithubUsername, yml.frontmatter.GithubUsername) {
 		allProblems = append(allProblems, addFilePath(err))
 	}
-	for _, err := range validateContributorSupportEmail(yml.SupportEmail) {
+	for _, err := range validateContributorSupportEmail(yml.frontmatter.SupportEmail) {
 		allProblems = append(allProblems, addFilePath(err))
 	}
-	for _, err := range validateContributorAvatarURL(yml.AvatarURL) {
+	for _, err := range validateContributorAvatarURL(yml.frontmatter.AvatarURL) {
 		allProblems = append(allProblems, addFilePath(err))
 	}
 
 	return allProblems
 }
 
-func parseContributor(rm readme) (contributorFrontmatterWithFilePath, error) {
+func parseContributorProfile(rm readme) (contributorProfile, error) {
 	fm, err := extractFrontmatter(rm.rawText)
 	if err != nil {
-		return contributorFrontmatterWithFilePath{}, fmt.Errorf("%q: failed to parse frontmatter: %v", rm.filePath, err)
+		return contributorProfile{}, fmt.Errorf("%q: failed to parse frontmatter: %v", rm.filePath, err)
 	}
 
 	yml := contributorProfileFrontmatter{}
 	if err := yaml.Unmarshal([]byte(fm), &yml); err != nil {
-		return contributorFrontmatterWithFilePath{}, fmt.Errorf("%q: failed to parse: %v", rm.filePath, err)
+		return contributorProfile{}, fmt.Errorf("%q: failed to parse: %v", rm.filePath, err)
 	}
 
-	return contributorFrontmatterWithFilePath{
-		FilePath:                      rm.filePath,
-		contributorProfileFrontmatter: yml,
+	return contributorProfile{
+		filePath:    rm.filePath,
+		frontmatter: yml,
 	}, nil
 }
 
-func parseContributorFiles(readmeEntries []readme) (
-	map[string]contributorFrontmatterWithFilePath,
-	error,
-) {
-	frontmatterByUsername := map[string]contributorFrontmatterWithFilePath{}
+func parseContributorFiles(readmeEntries []readme) (map[string]contributorProfile, error) {
+	profilesByUsername := map[string]contributorProfile{}
 	yamlParsingErrors := []error{}
 	for _, rm := range readmeEntries {
-		fm, err := parseContributor(rm)
+		p, err := parseContributorProfile(rm)
 		if err != nil {
 			yamlParsingErrors = append(yamlParsingErrors, err)
 			continue
 		}
 
-		if prev, isConflict := frontmatterByUsername[fm.GithubUsername]; isConflict {
-			yamlParsingErrors = append(yamlParsingErrors, fmt.Errorf("%q: GitHub name %s conflicts with field defined in %q", fm.FilePath, fm.GithubUsername, prev.FilePath))
+		if prev, alreadyExists := profilesByUsername[p.frontmatter.GithubUsername]; alreadyExists {
+			yamlParsingErrors = append(yamlParsingErrors, fmt.Errorf("%q: GitHub name %s conflicts with field defined in %q", p.filePath, p.frontmatter.GithubUsername, prev.filePath))
 			continue
 		}
-		frontmatterByUsername[fm.GithubUsername] = fm
+		profilesByUsername[p.frontmatter.GithubUsername] = p
 	}
 	if len(yamlParsingErrors) != 0 {
 		return nil, validationPhaseError{
@@ -346,22 +343,22 @@ func parseContributorFiles(readmeEntries []readme) (
 
 	employeeGithubGroups := map[string][]string{}
 	yamlValidationErrors := []error{}
-	for _, yml := range frontmatterByUsername {
-		errors := validateContributorYaml(yml)
+	for _, p := range profilesByUsername {
+		errors := validateContributorYaml(p)
 		if len(errors) > 0 {
 			yamlValidationErrors = append(yamlValidationErrors, errors...)
 			continue
 		}
 
-		if yml.EmployerGithubUsername != nil {
-			employeeGithubGroups[*yml.EmployerGithubUsername] = append(
-				employeeGithubGroups[*yml.EmployerGithubUsername],
-				yml.GithubUsername,
+		if p.frontmatter.EmployerGithubUsername != nil {
+			employeeGithubGroups[*p.frontmatter.EmployerGithubUsername] = append(
+				employeeGithubGroups[*p.frontmatter.EmployerGithubUsername],
+				p.frontmatter.GithubUsername,
 			)
 		}
 	}
 	for companyName, group := range employeeGithubGroups {
-		if _, found := frontmatterByUsername[companyName]; found {
+		if _, found := profilesByUsername[companyName]; found {
 			continue
 		}
 		yamlValidationErrors = append(yamlValidationErrors, fmt.Errorf("company %q does not exist in %q directory but is referenced by these profiles: [%s]", companyName, rootRegistryPath, strings.Join(group, ", ")))
@@ -373,7 +370,7 @@ func parseContributorFiles(readmeEntries []readme) (
 		}
 	}
 
-	return frontmatterByUsername, nil
+	return profilesByUsername, nil
 }
 
 func aggregateContributorReadmeFiles() ([]readme, error) {
@@ -414,7 +411,7 @@ func aggregateContributorReadmeFiles() ([]readme, error) {
 }
 
 func validateRelativeUrls(
-	contributors map[string]contributorFrontmatterWithFilePath,
+	contributors map[string]contributorProfile,
 ) error {
 	// This function only validates relative avatar URLs for now, but it can be
 	// beefed up to validate more in the future
@@ -423,24 +420,24 @@ func validateRelativeUrls(
 	for _, con := range contributors {
 		// If the avatar URL is missing, we'll just assume that the Registry
 		// site build step will take care of filling in the data properly
-		if con.AvatarURL == nil {
+		if con.frontmatter.AvatarURL == nil {
 			continue
 		}
-		if isRelativeURL := strings.HasPrefix(*con.AvatarURL, ".") ||
-			strings.HasPrefix(*con.AvatarURL, "/"); !isRelativeURL {
-			continue
-		}
-
-		if strings.HasPrefix(*con.AvatarURL, "..") {
-			problems = append(problems, fmt.Errorf("%q: relative avatar URLs cannot be placed outside a user's namespaced directory", con.FilePath))
+		if isRelativeURL := strings.HasPrefix(*con.frontmatter.AvatarURL, ".") ||
+			strings.HasPrefix(*con.frontmatter.AvatarURL, "/"); !isRelativeURL {
 			continue
 		}
 
-		absolutePath := strings.TrimSuffix(con.FilePath, "README.md") +
-			*con.AvatarURL
+		if strings.HasPrefix(*con.frontmatter.AvatarURL, "..") {
+			problems = append(problems, fmt.Errorf("%q: relative avatar URLs cannot be placed outside a user's namespaced directory", con.filePath))
+			continue
+		}
+
+		absolutePath := strings.TrimSuffix(con.filePath, "README.md") +
+			*con.frontmatter.AvatarURL
 		_, err := os.ReadFile(absolutePath)
 		if err != nil {
-			problems = append(problems, fmt.Errorf("%q: relative avatar path %q does not point to image in file system", con.FilePath, *con.AvatarURL))
+			problems = append(problems, fmt.Errorf("%q: relative avatar path %q does not point to image in file system", con.filePath, *con.frontmatter.AvatarURL))
 		}
 	}
 
