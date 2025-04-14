@@ -16,5 +16,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.23.2"
-      - name: Validate
-        run: go run ./scripts/validate-contributor-readmes/main.go
+      - name: Validate contributors
+        run: go build ./scripts/contributors && ./contributors
+      - name: Remove build file artifact
+        run: rm ./contributors
