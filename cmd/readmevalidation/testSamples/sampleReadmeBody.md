@@ -1,12 +1,3 @@
----
-display_name: Goose
-description: Run Goose in your workspace
-icon: ../../../../.icons/goose.svg
-maintainer_github: coder
-verified: true
-tags: [agent, goose]
----
-
 # Goose
 
 Run the [Goose](https://block.github.io/goose/) agent in your workspace to generate code and perform tasks.

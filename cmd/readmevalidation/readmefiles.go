@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -31,9 +32,8 @@ func separateFrontmatter(readmeText string) (string, string, error) {
 	fm := ""
 	body := ""
 	fenceCount := 0
-	lineScanner := bufio.NewScanner(
-		strings.NewReader(strings.TrimSpace(readmeText)),
-	)
+
+	lineScanner := bufio.NewScanner(strings.NewReader(strings.TrimSpace(readmeText)))
 	for lineScanner.Scan() {
 		nextLine := lineScanner.Text()
 		if fenceCount < 2 && nextLine == fence {
@@ -66,48 +66,113 @@ func separateFrontmatter(readmeText string) (string, string, error) {
 	return fm, strings.TrimSpace(body), nil
 }
 
+var readmeHeaderRe = regexp.MustCompile("^(#{1,})(\\s*)")
+
+// Todo: This seems to work okay for now, but the really proper way of doing
+// this is by parsing this as an AST, and then checking the resulting nodes
+func validateReadmeBody(body string) []error {
+	trimmed := strings.TrimSpace(body)
+
+	if trimmed == "" {
+		return []error{errors.New("README body is empty")}
+	}
+
+	// If the very first line of the README, there's a risk that the rest of the
+	// validation logic will break, since we don't have many guarantees about
+	// how the README is actually structured
+	if !strings.HasPrefix(trimmed, "# ") {
+		return []error{errors.New("README body must start with ATX-style h1 header (i.e., \"# \")")}
+	}
+
+	var errs []error
+	latestHeaderLevel := 0
+	foundFirstH1 := false
+	isInCodeBlock := false
+
+	lineScanner := bufio.NewScanner(strings.NewReader(trimmed))
+	for lineScanner.Scan() {
+		nextLine := lineScanner.Text()
+
+		// Have to check this because a lot of programming languages support #
+		// comments (including Terraform), and without any context, there's no
+		// way to tell the difference between a markdown header and code comment
+		if strings.HasPrefix(nextLine, "```") {
+			isInCodeBlock = !isInCodeBlock
+			continue
+		}
+		if isInCodeBlock {
+			continue
+		}
+
+		headerGroups := readmeHeaderRe.FindStringSubmatch(nextLine)
+		if headerGroups == nil {
+			continue
+		}
+
+		spaceAfterHeader := headerGroups[2]
+		if spaceAfterHeader == "" {
+			errs = append(errs, errors.New("header does not have space between header characters and main header text"))
+		}
+
+		nextHeaderLevel := len(headerGroups[1])
+		if nextHeaderLevel == 1 && !foundFirstH1 {
+			foundFirstH1 = true
+			latestHeaderLevel = 1
+			continue
+		}
+
+		// If we have obviously invalid headers, it's not really safe to keep
+		// proceeding with the rest of the content
+		if nextHeaderLevel == 1 {
+			errs = append(errs, errors.New("READMEs cannot contain more than h1 header"))
+			break
+		}
+		if nextHeaderLevel > 6 {
+			errs = append(errs, fmt.Errorf("README/HTML files cannot have headers exceed level 6 (found level %d)", nextHeaderLevel))
+			break
+		}
+
+		// This is something we need to enforce for accessibility, not just for
+		// the Registry website, but also when users are viewing the README
+		// files in the GitHub web view
+		if nextHeaderLevel > latestHeaderLevel && nextHeaderLevel != (latestHeaderLevel+1) {
+			errs = append(errs, fmt.Errorf("headers are not allowed to increase more than 1 level at a time"))
+			continue
+		}
+
+		// As long as the above condition passes, there's no problems with
+		// going up a header level or going down 1+ header levels
+		latestHeaderLevel = nextHeaderLevel
+	}
+
+	return errs
+}
+
 // validationPhase represents a specific phase during README validation. It is
 // expected that each phase is discrete, and errors during one will prevent a
 // future phase from starting.
-type validationPhase int
+type validationPhase string
 
 const (
 	// validationPhaseFileStructureValidation indicates when the entire Registry
 	// directory is being verified for having all files be placed in the file
 	// system as expected.
-	validationPhaseFileStructureValidation validationPhase = iota
+	validationPhaseFileStructureValidation validationPhase = "File structure validation"
 
 	// validationPhaseFileLoad indicates when README files are being read from
 	// the file system
-	validationPhaseFileLoad
+	validationPhaseFileLoad = "Filesystem reading"
 
 	// validationPhaseReadmeParsing indicates when a README's frontmatter is
 	// being parsed as YAML. This phase does not include YAML validation.
-	validationPhaseReadmeParsing
+	validationPhaseReadmeParsing = "README parsing"
 
 	// validationPhaseReadmeValidation indicates when a README's frontmatter is
 	// being validated as proper YAML with expected keys.
-	validationPhaseReadmeValidation
+	validationPhaseReadmeValidation = "README validation"
 
 	// validationPhaseAssetCrossReference indicates when a README's frontmatter
 	// is having all its relative URLs be validated for whether they point to
 	// valid resources.
-	validationPhaseAssetCrossReference
+	validationPhaseAssetCrossReference = "Cross-referencing relative asset URLs"
 )
-
-func (p validationPhase) String() string {
-	switch p {
-	case validationPhaseFileStructureValidation:
-		return "File structure validation"
-	case validationPhaseFileLoad:
-		return "Filesystem reading"
-	case validationPhaseReadmeParsing:
-		return "README parsing"
-	case validationPhaseReadmeValidation:
-		return "README validation"
-	case validationPhaseAssetCrossReference:
-		return "Cross-referencing relative asset URLs"
-	default:
-		return fmt.Sprintf("Unknown validation phase: %d", p)
-	}
-}
