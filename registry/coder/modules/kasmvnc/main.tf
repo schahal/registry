@@ -4,7 +4,7 @@ terraform {
   required_providers {
     coder = {
       source  = "coder/coder"
-      version = ">= 0.12"
+      version = ">= 2.5"
     }
   }
 }
@@ -36,6 +36,18 @@ variable "desktop_environment" {
   }
 }
 
+variable "order" {
+  type        = number
+  description = "The order determines the position of app in the UI presentation. The lowest order is shown first and apps with equal order are sorted by name (ascending order)."
+  default     = null
+}
+
+variable "group" {
+  type        = string
+  description = "The name of a group that this app belongs to."
+  default     = null
+}
+
 variable "subdomain" {
   type        = bool
   default     = true
@@ -64,6 +76,8 @@ resource "coder_app" "kasm_vnc" {
   icon         = "/icon/kasmvnc.svg"
   subdomain    = var.subdomain
   share        = "owner"
+  order        = var.order
+  group        = var.group
 
   healthcheck {
     url       = "http://localhost:${var.port}/app"
