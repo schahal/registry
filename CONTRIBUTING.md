@@ -20,9 +20,9 @@ The Coder Registry is a collection of Terraform modules and templates for Coder 
 
 - Basic Terraform knowledge (for module development)
 - Terraform installed ([installation guide](https://developer.hashicorp.com/terraform/install))
-- Docker (for running tests)
+- Docker (for some modules' tests that rely on containers)
 
-### Install Dependencies
+### Install Dependencies (for formatting and scripts)
 
 Install Bun:
 
@@ -124,17 +124,21 @@ This script generates:
    - Accurate description and usage examples
    - Correct icon path (usually `../../../../.icons/your-icon.svg`)
    - Proper tags that describe your module
-3. **Create `main.test.ts`** to test your module
+3. **Create at least one `.tftest.hcl`** to test your module with `terraform test`
 4. **Add any scripts** or additional files your module needs
 
 ### 4. Test and Submit
 
 ```bash
-# Test your module
-bun test -t 'module-name'
+# Test your module (from the module directory)
+terraform init -upgrade
+terraform test -verbose
+
+# Or run all tests in the repo
+./scripts/terraform_test_all.sh
 
 # Format code
-bun fmt
+bun run fmt
 
 # Commit and create PR
 git add .
@@ -335,11 +339,12 @@ coder templates push test-[template-name] -d .
 ### 2. Test Your Changes
 
 ```bash
-# Test a specific module
-bun test -t 'module-name'
+# Test a specific module (from the module directory)
+terraform init -upgrade
+terraform test -verbose
 
 # Test all modules
-bun test
+./scripts/terraform_test_all.sh
 ```
 
 ### 3. Maintain Backward Compatibility
@@ -388,7 +393,7 @@ Example: `https://github.com/coder/registry/compare/main...your-branch?template=
 ### Every Module Must Have
 
 - `main.tf` - Terraform code
-- `main.test.ts` - Working tests
+- One or more `.tftest.hcl` files - Working tests with `terraform test`
 - `README.md` - Documentation with frontmatter
 
 ### Every Template Must Have
@@ -488,6 +493,6 @@ When reporting bugs, include:
 2. **No tests** or broken tests
 3. **Hardcoded values** instead of variables
 4. **Breaking changes** without defaults
-5. **Not running** `bun fmt` before submitting
+5. **Not running** formatting (`bun run fmt`) and tests (`terraform test`) before submitting
 
 Happy contributing! 🚀
